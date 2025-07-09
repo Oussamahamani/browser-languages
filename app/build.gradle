@@ -111,6 +111,7 @@ dependencies {
     testImplementation 'com.nhaarman:mockito-kotlin:1.6.0', {
         exclude group: 'org.jetbrains.kotlin'
     }
+    implementation 'com.google.mediapipe:tasks-genai:0.10.24'
 
     // support libraries
     implementation "androidx.palette:palette-ktx:1.0.0"

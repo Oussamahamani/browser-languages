@@ -206,6 +206,7 @@ class SmartCookieView(
         maxFling = ViewConfiguration.get(activity).scaledMaximumFlingVelocity.toFloat()
         smartCookieWebClient = SmartCookieWebClient(activity, this)
         gestureDetector = GestureDetector(activity, CustomGestureListener())
+//        webView?.addJavascriptInterface(WebAppInterface(this), "AndroidApp")
 
         val tab = WebView(activity).also { webView = it }.apply {
             id = this@SmartCookieView.id

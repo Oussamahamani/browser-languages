@@ -24,6 +24,7 @@ import androidx.webkit.WebViewFeature
 import com.cookiegames.smartcookie.AppTheme
 import com.cookiegames.smartcookie.BuildConfig
 import com.cookiegames.smartcookie.R
+import com.cookiegames.smartcookie.AITranslateInterface
 import com.cookiegames.smartcookie.adblock.AdBlocker
 import com.cookiegames.smartcookie.adblock.allowlist.AllowListModel
 import com.cookiegames.smartcookie.browser.JavaScriptChoice
@@ -89,6 +90,7 @@ class SmartCookieWebClient(
     private var initScale = 0f
 
     private var color = "<style>body{background-color:#424242 !important;} h1{color:#ffffff !important;} .error-code{color:#e6e6e6 !important;}</style>"
+@Inject internal lateinit var AiTranslate: AiTranslate
 
     @Inject internal lateinit var proxyUtils: ProxyUtils
     @Inject internal lateinit var userPreferences: UserPreferences
@@ -391,7 +393,13 @@ class SmartCookieWebClient(
                 else -> view.evaluateJavascript("lang = '" + lang + "'; " + translate.provideJs(activity), null)
             }
         }
+        view.settings.javaScriptEnabled = true
 
+// 1. Add the interface first
+        view.addJavascriptInterface(AITranslateInterface(), "AndroidApp")
+
+
+        view.evaluateJavascript(AiTranslate.provideJs(activity), null)
         if (view.title == null || view.title.isNullOrEmpty()) {
             smartCookieView.titleInfo.setTitle(activity.getString(R.string.untitled))
         } else {
