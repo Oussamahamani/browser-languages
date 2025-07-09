@@ -1,0 +1,29 @@
+buildscript {
+    ext.kotlinVersion = '1.9.24'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.7.2'
+        classpath 'com.getkeepsafe.dexcount:dexcount-gradle-plugin:2.0.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://jitpack.io" }
+        maven {
+            url "https://maven.mozilla.org/maven2"
+        }
+    }
+}
+
+ext {
+    minSdkVersion = 21
+    targetSdkVersion = 34
+    buildToolsVersion = '31.0.0'
+}
