@@ -44,16 +44,13 @@ window.addEventListener('DOMContentLoaded', function () {
     'use strict';
 
 try {
-  if (window.__myInjectedScriptHasRun__) {
-       return
-      }
-  
-      window.__myInjectedScriptHasRun__ = true;
-  
-            console.log("Injected script is running once!",Date.now());
+  if (window.__myInjectedScriptHasRun__) return;
 
-// translatePage()
-console.log("worked")
+  window.__myInjectedScriptHasRun__ = true;
+
+  console.log("Injected script is running once!", Date.now(), AndroidApp.getUserLanguage());
+  // translatePage()
+  console.log("worked")
 } catch (error) {
   console.log("🚀 ~ error:", error)
   

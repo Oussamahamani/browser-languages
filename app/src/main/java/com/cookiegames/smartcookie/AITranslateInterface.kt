@@ -8,6 +8,6 @@ class AITranslateInterface() {
     @JavascriptInterface
     fun getUserLanguage(): String {
         Log.i("webview","working")
-        return "BY"
+        return "by world "
     }
 }
