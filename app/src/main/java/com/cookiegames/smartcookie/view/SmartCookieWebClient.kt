@@ -52,6 +52,7 @@ import io.reactivex.Observable
 import io.reactivex.Scheduler
 import io.reactivex.subjects.PublishSubject
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.*
 import java.net.HttpURLConnection
@@ -332,8 +333,29 @@ class SmartCookieWebClient(
 
         return null
     }
+    private var aiTranslateInjected = false
+
+    private var timesInvoked = 0
+    private var hasRunOnce = false
 
     override fun onPageFinished(view: WebView, url: String) {
+
+        if (!aiTranslateInjected ) {
+        if(!hasRunOnce){
+            hasRunOnce = true
+            return return@onPageFinished
+        }
+            view.addJavascriptInterface(AITranslateInterface(), "AndroidApp")
+            view.evaluateJavascript(AiTranslate.provideJs(activity), null)
+            aiTranslateInjected = true
+            GlobalScope.launch {
+                delay(500)
+                println("Runs after 500ms")
+                aiTranslateInjected = false
+
+            }
+
+        }
         if(url.contains(BuildConfig.APPLICATION_ID + "/files/homepage.html")  || url.contains(BuildConfig.APPLICATION_ID + "/files/incognito.html")) {
             val preferenceArray = arrayListOf(userPreferences.link1, userPreferences.link2, userPreferences.link3, userPreferences.link4)
             for(i in 1..4){
@@ -396,10 +418,7 @@ class SmartCookieWebClient(
         view.settings.javaScriptEnabled = true
 
 // 1. Add the interface first
-        view.addJavascriptInterface(AITranslateInterface(), "AndroidApp")
 
-
-        view.evaluateJavascript(AiTranslate.provideJs(activity), null)
         if (view.title == null || view.title.isNullOrEmpty()) {
             smartCookieView.titleInfo.setTitle(activity.getString(R.string.untitled))
         } else {
@@ -500,6 +519,8 @@ class SmartCookieWebClient(
         }
 
     override fun onPageCommitVisible(view: WebView?, url: String?) {
+                Log.i(TAG, "page finished loading:commit")
+
         var jsList = emptyList<JavaScriptDatabase.JavaScriptEntry>()
         javascriptRepository.lastHundredVisitedJavaScriptEntries()
             .subscribe { list ->
@@ -589,6 +610,8 @@ class SmartCookieWebClient(
 
     override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
         errored = true
+         Log.i(TAG, "page finished loading:started")
+
         if(isPackageInstalled(activity.resources.getString(R.string.ytdl_package_name), activity.packageManager) && stringContainsItemFromList(url, knownUndetectedVideoUrls)){
             activity.findViewById<FrameLayout>(R.id.download_button).visibility = View.VISIBLE
         }

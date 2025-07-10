@@ -1,7 +1,17 @@
 (function () {
     'use strict';
 
-    alert(AndroidApp.getUserLanguage() ||"not working")
+(async function monitorUrlChange() {
+if (window.__myInjectedScriptHasRun__) {
+     return
+    }
+  let currentUrl = window.location.href;
+
+    window.__myInjectedScriptHasRun__ = true;
+
+          console.log("Injected script is running once!",Date.now());
+
+})();
     return
     // Your DOM manipulation code here
     // Example: document.getElementById('myElement').style.color = 'red';
