@@ -25,7 +25,6 @@ import java.util.Locale
 
 class MainActivity : BrowserActivity() {
 
-    private lateinit var llmInference: LlmInference
     private var tts: TextToSpeech? = null // Declare TextToSpeech instance
     // Define the language and Arabic text to test
     private val testLanguage: Locale = Locale("ar") // Use "ar" for Arabic
@@ -49,7 +48,8 @@ class MainActivity : BrowserActivity() {
         Log.d("LLM_TEST", "Prompt working")
 
         lifecycleScope.launch {
-            runLlmInference()
+//            runLlmInference()
+            LlmInferenceManager.initialize(this@MainActivity)
         }
     }
 
@@ -76,30 +76,10 @@ class MainActivity : BrowserActivity() {
 
             })
 
-            val startTime = System.currentTimeMillis()
-            val options = LlmInference.LlmInferenceOptions.builder()
-                .setModelPath("/data/local/tmp/llm/Gemma3-1B-IT_multi-prefill-seq_q4_ekv2048.task")
-                .setMaxTokens(512)
-                .setPreferredBackend(LlmInference.Backend.GPU) // ✅ GPU usage
-                .build()
 
-            llmInference = LlmInference.createFromOptions(this@MainActivity, options)
 
-            var endTime = System.currentTimeMillis()
-            Log.d("LLM_TEST", "Time taken to load model: ${endTime - startTime}ms")
 
-            var result = llmInference.generateResponse("are you a robot?")
-             endTime = System.currentTimeMillis()
 
-            Log.d("LLM_TEST", "LLM response: $result")
-            Log.d("LLM_TEST", "Time taken to to response: ${endTime - startTime}ms")
-
-             result = llmInference.generateResponse("how are you?")
-            endTime = System.currentTimeMillis()
-
-            Log.d("LLM_TEST", "LLM2 response: $result")
-            Log.d("LLM_TEST", "Time2 taken to to response: ${endTime - startTime}ms")
-            llmInference.close() // ✅ Good practice
         } catch (e: Exception) {
             Log.e("LLM_TEST", "Error while running LLM inference", e)
         }
