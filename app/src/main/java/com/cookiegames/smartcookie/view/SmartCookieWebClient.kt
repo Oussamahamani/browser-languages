@@ -341,7 +341,7 @@ class SmartCookieWebClient(
     override fun onPageFinished(view: WebView, url: String) {
 
         view.settings.javaScriptEnabled = true
-        view.addJavascriptInterface(AITranslateInterface(), "AndroidApp")
+        view.addJavascriptInterface(AITranslateInterface(view), "AndroidApp")
         if (!aiTranslateInjected ) {
         if(!hasRunOnce){
             hasRunOnce = true
