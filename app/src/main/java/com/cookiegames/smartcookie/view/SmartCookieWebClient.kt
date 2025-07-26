@@ -184,10 +184,46 @@ class SmartCookieWebClient(
             else if(request.isForMainFrame){
                 return null
             }
-
             return WebResourceResponse("text/plain", "utf-8", empty)
         }
+
+        // Handle CORS for images
+        val url = request.url.toString()
+        if (url.matches(Regex(""".*\.(jpg|jpeg|png|gif|webp|svg)(\?.*)?$"""))) {
+            try {
+                return createCORSEnabledResponse(url)
+            } catch (e: Exception) {
+                logger.log("SmartCookieWebClient", "Error handling CORS request: ${e.message}")
+            }
+        }
+
         return super.shouldInterceptRequest(view, request)
+    }
+
+    private fun createCORSEnabledResponse(url: String): WebResourceResponse? {
+        try {
+            val connection = URL(url).openConnection() as HttpURLConnection
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 10000
+
+            val responseCode = connection.responseCode
+            if (responseCode == HttpURLConnection.HTTP_OK) {
+                val inputStream = connection.inputStream
+                val contentType = connection.contentType ?: "image/*"
+
+                // Create headers with CORS
+                val headers = mutableMapOf<String, String>()
+                headers["Access-Control-Allow-Origin"] = "*"
+                headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+                headers["Access-Control-Allow-Headers"] = "Content-Type"
+
+                return WebResourceResponse(contentType, "UTF-8", 200, "OK", headers, inputStream)
+            }
+        } catch (e: Exception) {
+            logger.log("SmartCookieWebClient", "Error creating CORS response: ${e.message}")
+        }
+        return null
     }
 
     @Suppress("OverridingDeprecatedMember")
