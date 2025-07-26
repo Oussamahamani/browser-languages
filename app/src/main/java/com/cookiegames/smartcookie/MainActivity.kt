@@ -58,20 +58,20 @@ class MainActivity : BrowserActivity() {
         Log.d("LLM_TEST", "Prompt working")
 
         lifecycleScope.launch {
-            try {
-                Log.d("MainActivity", "Attempting to analyze image from URL: $TEST_IMAGE_URL")
-                val recognizedData = ImageTextAnalyzer.analyzeImageFromUrl(this@MainActivity, TEST_IMAGE_URL)
+            // try {
+            //     Log.d("MainActivity", "Attempting to analyze image from URL: $TEST_IMAGE_URL")
+            //     val recognizedData = ImageTextAnalyzer.analyzeImageFromUrl(this@MainActivity, TEST_IMAGE_URL)
 
-                Log.d("MainActivity", "Analysis Complete!")
-                Log.d("TextRecognitionResult", recognizedData)
+            //     Log.d("MainActivity", "Analysis Complete!")
+            //     Log.d("TextRecognitionResult", recognizedData)
 
-                Log.d("TextRecognitionResult", "Detailed Text Data:")
+            //     Log.d("TextRecognitionResult", "Detailed Text Data:")
 
 
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Error during image analysis: ${e.message}", e)
-                Log.e("TextRecognitionResult", "Failed to recognize text: ${e.localizedMessage ?: "Unknown error"}")
-            }
+            // } catch (e: Exception) {
+            //     Log.e("MainActivity", "Error during image analysis: ${e.message}", e)
+            //     Log.e("TextRecognitionResult", "Failed to recognize text: ${e.localizedMessage ?: "Unknown error"}")
+            // }
 
 
 //            runLlmInference()
