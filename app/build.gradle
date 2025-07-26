@@ -4,6 +4,7 @@ apply plugin: 'com.android.application'
 apply plugin: 'kotlin-android'
 apply plugin: 'kotlin-kapt'
 apply plugin: 'jacoco'
+apply plugin: 'org.jetbrains.kotlin.plugin.serialization'
 
 android {
     namespace 'com.cookiegames.smartcookie'
@@ -213,6 +214,7 @@ dependencies {
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0' // Check for latest stable version
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0' // For Android-specific dispatchers
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3' // Use the latest stable version
 
 }
 

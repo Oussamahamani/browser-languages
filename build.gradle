@@ -8,6 +8,7 @@ buildscript {
         classpath 'com.android.tools.build:gradle:8.7.2'
         classpath 'com.getkeepsafe.dexcount:dexcount-gradle-plugin:2.0.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion"
+        classpath "org.jetbrains.kotlin:kotlin-serialization:$kotlinVersion" // <-- THIS LINE MUST BE HERE
     }
 }
 

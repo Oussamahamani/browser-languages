@@ -37,8 +37,7 @@ class MainActivity : BrowserActivity() {
     private lateinit var detailedRecognizedTextView: TextView
 
     // Define a sample URL for testing. You can replace this with any image URL containing text.
-    private val TEST_IMAGE_URL = "https://cdn.prod.website-files.com/6553f232b99bb244f0df0a1a/66e0bbccd8f6a7541cb3225c_college-statistics-infographic-powerpoint-google-slides-keynote-presentation-template-5.jpeg"
-    // Another example: "https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png"
+    private val TEST_IMAGE_URL = "https://acropolis-wp-content-uploads.s3.us-west-1.amazonaws.com/02-women-leveling-up-in-STEM.png"    // Another example: "https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png"
     // Or a URL to an image with more complex text.
 
 
@@ -64,20 +63,10 @@ class MainActivity : BrowserActivity() {
                 val recognizedData = ImageTextAnalyzer.analyzeImageFromUrl(this@MainActivity, TEST_IMAGE_URL)
 
                 Log.d("MainActivity", "Analysis Complete!")
-                Log.d("TextRecognitionResult", "Full Recognized Text:\n${recognizedData.fullText}")
+                Log.d("TextRecognitionResult", recognizedData)
 
                 Log.d("TextRecognitionResult", "Detailed Text Data:")
-                recognizedData.textBlocks.forEachIndexed { blockIndex, block ->
-                    Log.d("TextRecognitionResult", "  Block ${blockIndex + 1}: Text='${block.text}', Bounds=${block.boundingBox}")
 
-                    block.lines.forEachIndexed { lineIndex, line ->
-                        Log.d("TextRecognitionResult", "    Line ${lineIndex + 1}: Text='${line.text}', Bounds=${line.boundingBox}")
-
-                        line.elements.forEachIndexed { elementIndex, element ->
-                            Log.d("TextRecognitionResult", "      Element ${elementIndex + 1}: Text='${element.text}', Bounds=${element.boundingBox}")
-                        }
-                    }
-                }
 
             } catch (e: Exception) {
                 Log.e("MainActivity", "Error during image analysis: ${e.message}", e)
