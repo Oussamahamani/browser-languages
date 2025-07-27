@@ -95,7 +95,6 @@ object ImageTextAnalyzer {
      * @throws Exception if ML Kit encounters an error during text recognition.
      */
     suspend fun analyzeImageFromUrl(
-        context: Context,
         imageUrl: String
     ): String { // Changed return type to String
         var bitmap: Bitmap? = null

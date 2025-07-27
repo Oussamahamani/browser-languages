@@ -6,41 +6,60 @@ import android.webkit.WebView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+// Data class representing the expected JSON structure from ImageTextAnalyzer
+// This is needed to parse the result.
+//@Serializable
+//data class RecognizedTextData(
+//    val fullText: String
+//)
 
 class AiImageTranslateInterface(private val view: WebView) {
 
-    @JavascriptInterface
-    fun getUserLanguage(): String {
-        Log.i("webview","working")
-        return "by world "
-    }
+    // A single instance of the JSON parser for efficiency
+    private val jsonParser = Json { ignoreUnknownKeys = true }
 
-    @JavascriptInterface
-    fun translateWithId() {
-        Log.i("webview", "loaded from js 2")
 
+
+    /**
+     * Receives a URL and an ID from JavaScript. It analyzes the image at the URL to extract
+     * text, translates that text, and then sends the result back to a JavaScript
+     * function `onTranslationResult(translation, id)`.
+     *
+     * @param url The URL of the image to be analyzed.
+     * @param id A unique identifier to track the request in the WebView.
+     */
+    @JavascriptInterface
+    fun extractTextFromImage(url: String, id: String) {
+        Log.i("webview", "Received translation request for ID: $id")
+
+        // Launch a coroutine on a background thread for network operations
         CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // 1. Analyze the image from the provided URL to get a JSON string
+                val recognizedJson = ImageTextAnalyzer.analyzeImageFromUrl(url)
+                    Log.i("extraction-result", recognizedJson)
 
+                val jsCode = """onExtractionResult(${recognizedJson}, ${quoted(id)})"""
 
-            val translated = LlmInferenceManager.translate("my name is john and i live in french")
-            if (translated != null) {
-                Log.i("loaded from js",translated)
-            }else{
-                Log.i("loaded from js","no translation")
+                // 5. Execute the JavaScript on the main thread to update the UI
+                view.post {
+                    view.evaluateJavascript(jsCode, null)
+                }
 
-            }
-
-//            val jsCode = """onTranslationResult($translated)"""
-            val jsCode = """onTranslationResult(${translated?.let { quoted(it) }})"""
-
-            view.post {
-                Log.i("webview", "loaded from js 5")
-                view.evaluateJavascript(jsCode, null)
+            } catch (e: Exception) {
+              
             }
         }
     }
 
+    /**
+     * Wraps a string in quotes and escapes any internal quotes for safe
+     * injection into a JavaScript string.
+     */
     private fun quoted(text: String): String {
-        return "\"" + text.replace("\"", "\\\"") + "\""
+        return "'${text.replace("'", "\\'")}'"
     }
 }
