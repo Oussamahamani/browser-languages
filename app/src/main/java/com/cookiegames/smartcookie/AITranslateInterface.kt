@@ -16,13 +16,13 @@ class AITranslateInterface(private val view: WebView) {
     }
 
     @JavascriptInterface
-    fun translateWithId() {
+    fun translateWithId(text: String, id: String) {
         Log.i("webview", "loaded from js 2")
 
         CoroutineScope(Dispatchers.IO).launch {
 
 
-            val translated = LlmInferenceManager.translate("my name is john and i live in french")
+            val translated = LlmInferenceManager.translate(text)
             if (translated != null) {
                 Log.i("loaded from js",translated)
             }else{
@@ -31,7 +31,7 @@ class AITranslateInterface(private val view: WebView) {
             }
 
 //            val jsCode = """onTranslationResult($translated)"""
-            val jsCode = """onTranslationResult(${translated?.let { quoted(it) }})"""
+            val jsCode = """onTranslationResult(${translated?.let { quoted(it) }}, ${quoted(id)})"""
 
             view.post {
                 Log.i("webview", "loaded from js 5")
