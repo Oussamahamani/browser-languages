@@ -1,5 +1,6 @@
 const resolvers = new Map();
 
+
 (async function () {
     'use strict';
     if (window.image__myInjectedScriptHasRun__) return;
@@ -7,9 +8,20 @@ const resolvers = new Map();
 
     console.log("loaded from js 1");
     console.time("loaded from js");
+    let images = document.querySelectorAll("img")
 
-    const imageUrl = "https://acropolis-wp-content-uploads.s3.us-west-1.amazonaws.com/02-women-leveling-up-in-STEM.png";
-    const requestId = "454545";
+for (let image of images) {
+        console.log("loaded from js 2:", image.src);
+
+
+}
+    // await extractImage("https://acropolis-wp-content-uploads.s3.us-west-1.amazonaws.com/02-women-leveling-up-in-STEM.png", "454545");
+    console.timeEnd("loaded from js");
+})();
+
+
+  async function extractImage(imageUrl,requestId){
+ 
 
     // Step 1: Extract text from image
     AndroidApp.extractTextFromImage(imageUrl, requestId);
@@ -37,10 +49,8 @@ const resolvers = new Map();
         translations[text] = translatedTexts[index] || "";
     });
     console.log("loaded from js 7:", JSON.stringify(translations));
-
-    console.timeEnd("loaded from js");
-})();
-
+    return [result, translations];
+}
 // Handles the async wait for Android callback
 function waitForExtraction(id) {
     return new Promise((resolve) => {
@@ -58,8 +68,6 @@ function onExtractionResult(result, id) {
     }
 }
 
-// Batch translation function
-// 🔁 Rewritten translateBatch to just return translated texts array
 async function translateTexts(texts) {
     const endpoint = 'https://10.0.2.2:3001/translate/batch';
 
