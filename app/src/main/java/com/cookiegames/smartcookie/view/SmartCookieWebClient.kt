@@ -25,6 +25,8 @@ import com.cookiegames.smartcookie.AppTheme
 import com.cookiegames.smartcookie.BuildConfig
 import com.cookiegames.smartcookie.R
 import com.cookiegames.smartcookie.AITranslateInterface
+import com.cookiegames.smartcookie.AiImageTranslateInterface
+import com.cookiegames.smartcookie.AiYouTubeTranslateInterface
 import com.cookiegames.smartcookie.adblock.AdBlocker
 import com.cookiegames.smartcookie.adblock.allowlist.AllowListModel
 import com.cookiegames.smartcookie.browser.JavaScriptChoice
@@ -91,7 +93,10 @@ class SmartCookieWebClient(
     private var initScale = 0f
 
     private var color = "<style>body{background-color:#424242 !important;} h1{color:#ffffff !important;} .error-code{color:#e6e6e6 !important;}</style>"
-@Inject internal lateinit var AiTranslate: AiTranslate
+
+    @Inject internal lateinit var AiTranslate: AiTranslate
+    @Inject internal lateinit var AiImageTranslate: AiImageTranslate
+    @Inject internal lateinit var AiYouTubeTranslate:AiIYotubeTranslate
 
     @Inject internal lateinit var proxyUtils: ProxyUtils
     @Inject internal lateinit var userPreferences: UserPreferences
@@ -378,12 +383,19 @@ class SmartCookieWebClient(
 
         view.settings.javaScriptEnabled = true
         view.addJavascriptInterface(AITranslateInterface(view), "AndroidApp")
+        view.addJavascriptInterface(AiYouTubeTranslateInterface(view), "AndroidApp")
+        view.addJavascriptInterface(AiImageTranslateInterface(view), "AndroidApp")
+
         if (!aiTranslateInjected ) {
         if(!hasRunOnce){
             hasRunOnce = true
             return return@onPageFinished
         }
         view.evaluateJavascript(AiTranslate.provideJs(activity), null)
+
+            view.evaluateJavascript(AiImageTranslate.provideJs(activity), null)
+            view.evaluateJavascript(AiYouTubeTranslate.provideJs(activity), null)
+
             aiTranslateInjected = true
             GlobalScope.launch {
                 delay(500)
