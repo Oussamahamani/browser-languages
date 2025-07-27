@@ -5,6 +5,8 @@ const resolvers = new Map();
   if (window.image__myInjectedScriptHasRun__) return;
   window.image__myInjectedScriptHasRun__ = true;
 
+
+  return
   console.log("loaded from js 1");
   console.time("loaded from js");
   let images = document.querySelectorAll("img");

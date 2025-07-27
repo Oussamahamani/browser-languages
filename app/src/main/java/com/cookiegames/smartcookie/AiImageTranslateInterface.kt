@@ -1,5 +1,6 @@
 package com.cookiegames.smartcookie
 
+import android.annotation.SuppressLint
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
@@ -31,6 +32,7 @@ class AiImageTranslateInterface(private val view: WebView) {
      * @param url The URL of the image to be analyzed.
      * @param id A unique identifier to track the request in the WebView.
      */
+    @SuppressLint("SuspiciousIndentation")
     @JavascriptInterface
     fun extractTextFromImage(url: String, id: String) {
         Log.i("webview", "Received translation request for ID: $id")
