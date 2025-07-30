@@ -1,12 +1,13 @@
-(async function () {
+/**
+     * Filters out unwanted transcript content
+     */(async function () {
     'use strict';
     if (window.__myInjectedYoutubeScriptHasRun__) return;
     window.__myInjectedYoutubeScriptHasRun__ = true;
     console.log("loaded from js youtube")
 
 /**
- * Enhanced Timed Event System with Smart TTS Timing Adjustment
- * This version buffers upcoming sentences and adjusts timing to prevent cutoffs
+ * Enhanced Timed Event System with Smart TTS Timing and DOM Controls
  */
 class TimedEventSystem {
     constructor(options = {}) {
@@ -23,17 +24,301 @@ class TimedEventSystem {
         this.isActive = false;
         this.timeUpdateHandler = null;
         this.isBatchTranslating = false;
-
+        
         // TTS timing management
         this.currentlySpeaking = false;
         this.speechQueue = [];
         this.speechStartTime = 0;
         this.estimatedSpeechDuration = 0;
-        this.minGapBetweenSentences = 0.5; // minimum seconds between sentences
-        this.maxDelayAllowed = 5; // max seconds we can delay a sentence
-        this.wordsPerMinute = 150; // average speaking rate for estimation
-
+        this.minGapBetweenSentences = 0.5;
+        this.maxDelayAllowed = 5;
+        this.wordsPerMinute = 150;
+        
+        // User control state
+        this.userPaused = false;
+        this.controlsContainer = null;
+        
+        // Video muting state
+        this.originalVideoVolume = null;
+        this.wasVideoMuted = false;
+        
         this.init();
+    }
+
+    /**
+     * Creates DOM controls for start/stop functionality
+     */
+    createControls() {
+        // Remove existing controls if any
+        const existingControls = document.getElementById('tts-controls');
+        if (existingControls) {
+            existingControls.remove();
+        }
+
+        // Find placement container
+        const placementContainer = this.findControlsPlacement();
+        if (!placementContainer) {
+            this.log('Could not find placement container, controls will not be created');
+            return;
+        }
+
+        // Create controls container
+        this.controlsContainer = document.createElement('div');
+        this.controlsContainer.id = 'tts-controls';
+        this.controlsContainer.style.cssText = `
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.95);
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: Arial, sans-serif;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 1000;
+        `;
+
+        // Create start/stop button
+        const toggleButton = document.createElement('button');
+        toggleButton.id = 'tts-toggle';
+        toggleButton.textContent = this.userPaused ? '▶️ Start TTS' : '⏸️ Stop TTS';
+        toggleButton.style.cssText = `
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            background: ${this.userPaused ? '#4CAF50' : '#f44336'};
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background 0.3s;
+            font-weight: 500;
+        `;
+
+        toggleButton.addEventListener('click', () => {
+            this.toggleTTS();
+        });
+
+        // Create compact status indicator
+        const statusSpan = document.createElement('span');
+        statusSpan.id = 'tts-status';
+        statusSpan.style.cssText = `
+            font-size: 12px;
+            color: #333;
+            font-weight: 500;
+        `;
+        this.updateStatus(statusSpan);
+
+        // Create language indicator
+        const langSpan = document.createElement('span');
+        langSpan.textContent = `${this.targetLanguage || 'Original'}`;
+        langSpan.style.cssText = `
+            font-size: 11px;
+            color: #666;
+            background: rgba(0, 0, 0, 0.08);
+            padding: 4px 8px;
+            border-radius: 4px;
+        `;
+
+        // Assemble controls
+        this.controlsContainer.appendChild(toggleButton);
+        this.controlsContainer.appendChild(statusSpan);
+        this.controlsContainer.appendChild(langSpan);
+
+        // Insert controls - try different placement strategies
+        if (placementContainer.id === 'secondary') {
+            // Insert at the beginning of sidebar
+            placementContainer.insertBefore(this.controlsContainer, placementContainer.firstChild);
+        } else {
+            // Insert after the container
+            placementContainer.parentNode.insertBefore(this.controlsContainer, placementContainer.nextSibling);
+        }
+    }
+
+    /**
+     * Finds the appropriate container to place controls
+     */
+    findControlsPlacement() {
+        // Try different selectors for placement - look for elements that come after the video
+        const selectors = [
+            '#secondary',              // YouTube sidebar
+            '#below',                  // Below video content
+            '#meta',                   // Video metadata section
+            '#info',                   // Video info section
+            '.ytd-watch-flexy',        // Watch page container
+        ];
+
+        for (const selector of selectors) {
+            const container = document.querySelector(selector);
+            if (container) {
+                this.log(`Found placement container using selector: ${selector}`);
+                return container;
+            }
+        }
+
+        // Fallback: create placement after video
+        const video = document.querySelector('video');
+        if (video) {
+            const videoParent = video.closest('#movie_player') || video.parentElement;
+            return videoParent;
+        }
+
+        return null;
+    }
+
+
+
+    /**
+     * Toggles TTS on/off
+     */
+    toggleTTS() {
+        this.userPaused = !this.userPaused;
+        
+        const button = document.getElementById('tts-toggle');
+        const statusSpan = document.getElementById('tts-status');
+        
+        if (this.userPaused) {
+            // Stop TTS
+            this.stopCurrentSpeech();
+            button.textContent = '▶️ Start TTS';
+            button.style.background = '#4CAF50';
+            this.log('TTS paused by user');
+        } else {
+            // Resume TTS
+            button.textContent = '⏸️ Stop TTS';
+            button.style.background = '#f44336';
+            this.log('TTS resumed by user');
+        }
+        
+        this.updateStatus(statusSpan);
+    }
+
+    /**
+     * Updates the status display
+     */
+    updateStatus(statusElement) {
+        if (!statusElement) return;
+        
+        let status = 'Inactive';
+        let color = '#999';
+        
+        if (this.userPaused) {
+            status = '⏸️ Paused';
+            color = '#ff9800';
+        } else if (this.currentlySpeaking) {
+            status = '🔊 Speaking';
+            color = '#4CAF50';
+        } else if (this.speechQueue.length > 0) {
+            status = `⏳ Queued (${this.speechQueue.length})`;
+            color = '#2196F3';
+        } else if (this.isActive) {
+            status = '✅ Ready';
+            color = '#4CAF50';
+        }
+        
+        statusElement.textContent = status;
+        statusElement.style.color = color;
+    }
+
+    /**
+     * Mutes the video when TTS starts speaking
+     */
+    muteVideo() {
+        if (!this.video) return;
+        
+        // Store original state only if we haven't already
+        if (this.originalVideoVolume === null) {
+            this.originalVideoVolume = this.video.volume;
+            this.wasVideoMuted = this.video.muted;
+        }
+        
+        this.video.muted = true;
+        this.log('Video muted for TTS');
+    }
+
+    /**
+     * Unmutes the video when TTS stops
+     */
+    unmuteVideo() {
+        if (!this.video || this.originalVideoVolume === null) return;
+        
+        // Only unmute if the video wasn't originally muted
+        if (!this.wasVideoMuted) {
+            this.video.muted = false;
+            this.video.volume = this.originalVideoVolume;
+            this.log('Video unmuted after TTS');
+        }
+    }
+
+    /**
+     * Resets video muting state
+     */
+    resetVideoMuteState() {
+        this.originalVideoVolume = null;
+        this.wasVideoMuted = false;
+    }
+    filterTranscriptText(text) {
+        if (!text || typeof text !== 'string') {
+            return null;
+        }
+
+        // Remove empty or whitespace-only text
+        const trimmed = text.trim();
+        if (!trimmed) {
+            return null;
+        }
+
+        // Filter out sound effects and music
+        const soundEffectPatterns = [
+            /^\[.*\]$/i,                    // [MUSIC PLAYING], [APPLAUSE], etc.
+            /^\(.*\)$/i,                    // (music), (applause), etc.
+            /^.*MUSIC.*$/i,                 // Any line containing MUSIC
+            /^.*APPLAUSE.*$/i,              // Any line containing APPLAUSE
+            /^.*LAUGHTER.*$/i,              // Any line containing LAUGHTER
+            /^.*SOUND.*$/i,                 // Any line containing SOUND
+            /^.*AUDIO.*$/i,                 // Any line containing AUDIO
+            /^\*.*\*$/i,                    // *sound effect*
+        ];
+
+        for (const pattern of soundEffectPatterns) {
+            if (pattern.test(trimmed)) {
+                this.log(`Filtered out sound effect: "${trimmed}"`);
+                return null;
+            }
+        }
+
+        // Remove speaker names (format: "SPEAKER NAME: text" or "Speaker Name: text")
+        const speakerPattern = /^([A-Z][A-Z\s]+|[A-Za-z\s]+):\s*/;
+        let cleanText = trimmed.replace(speakerPattern, '');
+        
+        // If removing speaker name left us with empty text, return null
+        if (!cleanText.trim()) {
+            this.log(`Filtered out speaker-only line: "${trimmed}"`);
+            return null;
+        }
+
+        // Log speaker removal if it happened
+        if (cleanText !== trimmed) {
+            this.log(`Removed speaker name: "${trimmed}" -> "${cleanText}"`);
+        }
+
+        return cleanText.trim();
+    }
+
+    /**
+     * Stops current speech and clears queue
+     */
+    stopCurrentSpeech() {
+        if (AndroidTTS && typeof AndroidTTS.stopSpeaking === 'function') {
+            AndroidTTS.stopSpeaking();
+        }
+        this.currentlySpeaking = false;
+        this.speechQueue = [];
+        
+        // Update status
+        const statusSpan = document.getElementById('tts-status');
+        this.updateStatus(statusSpan);
     }
 
     async init() {
@@ -45,6 +330,9 @@ class TimedEventSystem {
             return;
         }
         this.log('Video element found.');
+
+        // Create controls immediately
+        this.createControls();
 
         if (window.location.hostname.includes('youtube.com')) {
             try {
@@ -69,14 +357,31 @@ class TimedEventSystem {
             const secs = totalSeconds % 60;
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         };
-function extractYouTubeVideoIDFromCurrentPage() {
-  const url = window.location.href;
-  const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-  const match = url.match(regex);
-  return match ? match[1] : null;
-}
 
-        const url = "https://youtube-captions.p.rapidapi.com/transcript?videoId=qcjrduz_YS8";
+        // Extract video ID from current URL
+        const urlParams = new URLSearchParams(window.location.search);
+        let videoId = urlParams.get('v');
+        
+        if (!videoId) {
+            // Try to extract from different YouTube URL formats
+            const url = window.location.href;
+            const shortUrlMatch = url.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+            const embedMatch = url.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/);
+            
+            if (shortUrlMatch) {
+                videoId = shortUrlMatch[1];
+            } else if (embedMatch) {
+                videoId = embedMatch[1];
+            }
+        }
+
+        if (!videoId) {
+            throw new Error('Could not extract video ID from URL');
+        }
+
+        this.log(`Extracting transcript for video ID: ${videoId}`);
+
+        const url = `https://youtube-captions.p.rapidapi.com/transcript?videoId=${videoId}`;
         const options = {
             method: "GET",
             headers: {
@@ -98,21 +403,16 @@ function extractYouTubeVideoIDFromCurrentPage() {
                 }));
         } catch (error) {
             console.error(error);
+            throw error;
         }
     }
 
-    /**
-     * Estimates speech duration based on text length and speaking rate
-     */
     estimateSpeechDuration(text) {
         const wordCount = text.split(/\s+/).length;
         const estimatedSeconds = (wordCount / this.wordsPerMinute) * 60;
-        return Math.max(estimatedSeconds, 1); // minimum 1 second
+        return Math.max(estimatedSeconds, 1);
     }
 
-    /**
-     * Enhanced TTS speak function with completion callback
-     */
     speakWithSmartTiming(text, originalTime) {
         if (!AndroidTTS || typeof AndroidTTS.speak !== 'function') {
             return;
@@ -121,23 +421,24 @@ function extractYouTubeVideoIDFromCurrentPage() {
         this.currentlySpeaking = true;
         this.speechStartTime = this.video.currentTime;
         this.estimatedSpeechDuration = this.estimateSpeechDuration(text);
-
+        
+        // Mute video when TTS starts
+        this.muteVideo();
+        
         this.log(`Speaking: "${text}" (estimated duration: ${this.estimatedSpeechDuration.toFixed(1)}s)`);
 
-        // Check if AndroidTTS supports callback
-        if (typeof AndroidTTS.speakWithCallback === 'function') {
-            // Create a unique callback name
-            const callbackName = `speechComplete_${Date.now()}`;
+        // Update status
+        const statusDiv = document.getElementById('tts-status');
+        this.updateStatus(statusDiv);
 
-            // Set up the callback
+        if (typeof AndroidTTS.speakWithCallback === 'function') {
+            const callbackName = `speechComplete_${Date.now()}`;
             window[callbackName] = () => {
                 this.onSpeechComplete();
-                delete window[callbackName]; // cleanup
+                delete window[callbackName];
             };
-
             AndroidTTS.speakWithCallback(text, callbackName);
         } else {
-            // Fallback: use regular speak and estimate completion time
             AndroidTTS.speak(text);
             setTimeout(() => {
                 this.onSpeechComplete();
@@ -145,54 +446,64 @@ function extractYouTubeVideoIDFromCurrentPage() {
         }
     }
 
-    /**
-     * Called when TTS completes speaking
-     */
     onSpeechComplete() {
         this.currentlySpeaking = false;
         this.log('Speech completed');
-
-        // Process any queued speech
+        
+        // Check if we should unmute video (no more speech queued and not paused)
+        if (this.speechQueue.length === 0 && !this.userPaused) {
+            this.unmuteVideo();
+        }
+        
+        // Update status
+        const statusSpan = document.getElementById('tts-status');
+        this.updateStatus(statusSpan);
+        
         this.processQueuedSpeech();
     }
 
-    /**
-     * Process queued speech items
-     */
     processQueuedSpeech() {
-        if (this.speechQueue.length > 0 && !this.currentlySpeaking) {
+        if (this.speechQueue.length > 0 && !this.currentlySpeaking && !this.userPaused) {
             const nextSpeech = this.speechQueue.shift();
             this.speakWithSmartTiming(nextSpeech.text, nextSpeech.originalTime);
         }
     }
 
-    /**
-     * Queue speech or speak immediately based on current state
-     */
     queueOrSpeak(text, originalTime) {
+        // Don't proceed if user has paused TTS
+        if (this.userPaused) {
+            return;
+        }
+
+        // Filter the text first
+        const filteredText = this.filterTranscriptText(text);
+        if (!filteredText) {
+            return; // Skip this text entirely
+        }
+
         if (this.currentlySpeaking) {
-            // Check if we should interrupt current speech
             const timeSinceLastSpeech = this.video.currentTime - this.speechStartTime;
             const remainingEstimatedTime = Math.max(0, this.estimatedSpeechDuration - timeSinceLastSpeech);
             const delayUntilOriginalTime = Math.max(0, originalTime - this.video.currentTime);
-
-            // If the delay would be too long, interrupt current speech
+            
             if (delayUntilOriginalTime > this.maxDelayAllowed || remainingEstimatedTime > delayUntilOriginalTime + 2) {
                 this.log('Interrupting current speech for new sentence');
                 if (AndroidTTS && typeof AndroidTTS.stopSpeaking === 'function') {
                     AndroidTTS.stopSpeaking();
                 }
                 this.currentlySpeaking = false;
-                this.speechQueue = []; // clear queue
-                this.speakWithSmartTiming(text, originalTime);
+                this.speechQueue = [];
+                this.speakWithSmartTiming(filteredText, originalTime);
             } else {
-                // Queue the speech
-                this.speechQueue.push({ text, originalTime });
-                this.log(`Queued speech: "${text}" (queue length: ${this.speechQueue.length})`);
+                this.speechQueue.push({ text: filteredText, originalTime });
+                this.log(`Queued speech: "${filteredText}" (queue length: ${this.speechQueue.length})`);
+                
+                // Update status
+                const statusSpan = document.getElementById('tts-status');
+                this.updateStatus(statusSpan);
             }
         } else {
-            // Speak immediately
-            this.speakWithSmartTiming(text, originalTime);
+            this.speakWithSmartTiming(filteredText, originalTime);
         }
     }
 
@@ -239,17 +550,20 @@ function extractYouTubeVideoIDFromCurrentPage() {
             return;
         }
 
-        this.events = transcript.map((item, index) => ({
-            id: `event_${index}`,
-            time: this.parseTimeToSeconds(item.time),
-            text: item.text,
-            originalText: item.text,
-            isTranslated: false,
-            fired: false,
-            duration: item.dur || 3, // use provided duration or default to 3 seconds
-        })).sort((a, b) => a.time - b.time);
+        // Filter out unwanted content during loading
+        this.events = transcript
+            .map((item, index) => ({
+                id: `event_${index}`,
+                time: this.parseTimeToSeconds(item.time),
+                text: item.text,
+                originalText: item.text,
+                isTranslated: false,
+                fired: false,
+                duration: item.dur || 3,
+            }))
+            .filter(event => this.filterTranscriptText(event.text) !== null) // Only keep valid events
+            .sort((a, b) => a.time - b.time);
 
-        // Calculate gaps between sentences for better timing
         for (let i = 0; i < this.events.length - 1; i++) {
             const current = this.events[i];
             const next = this.events[i + 1];
@@ -257,7 +571,7 @@ function extractYouTubeVideoIDFromCurrentPage() {
         }
 
         this.currentEventIndex = 0;
-        this.log(`Loaded ${this.events.length} events. Starting system.`);
+        this.log(`Loaded ${this.events.length} valid events (filtered from ${transcript.length} total). Starting system.`);
 
         if (this.video) {
             this.start();
@@ -296,13 +610,7 @@ function extractYouTubeVideoIDFromCurrentPage() {
         }
         this.isActive = false;
 
-        // Stop TTS and clear queue
-        if (AndroidTTS && typeof AndroidTTS.stopSpeaking === 'function') {
-            AndroidTTS.stopSpeaking();
-        }
-        this.currentlySpeaking = false;
-        this.speechQueue = [];
-
+        this.stopCurrentSpeech();
         this.log('Timed event system stopped.');
     }
 
@@ -322,9 +630,6 @@ function extractYouTubeVideoIDFromCurrentPage() {
         }
     }
 
-    /**
-     * Enhanced processEvents with smart timing
-     */
     processEvents(currentTime) {
         this.translateUpcomingEvents();
 
@@ -333,10 +638,7 @@ function extractYouTubeVideoIDFromCurrentPage() {
 
             if (currentTime >= event.time && !event.fired) {
                 try {
-                    // Use the enhanced speech system instead of direct onEvent
                     this.queueOrSpeak(event.text, event.time);
-
-                    // Still call the original onEvent for any other processing
                     this.onEvent(event);
                 } catch (error) {
                     this.handleError('Error in onEvent callback', error);
@@ -344,7 +646,6 @@ function extractYouTubeVideoIDFromCurrentPage() {
                 event.fired = true;
                 this.currentEventIndex++;
             } else if (currentTime < event.time) {
-                // Look ahead to see if we need to adjust timing
                 this.optimizeUpcomingTiming(currentTime);
                 break;
             } else {
@@ -353,9 +654,6 @@ function extractYouTubeVideoIDFromCurrentPage() {
         }
     }
 
-    /**
-     * Look ahead and optimize timing for upcoming events
-     */
     optimizeUpcomingTiming(currentTime) {
         if (!this.currentlySpeaking || this.currentEventIndex >= this.events.length) {
             return;
@@ -366,11 +664,9 @@ function extractYouTubeVideoIDFromCurrentPage() {
         const timeSinceLastSpeech = currentTime - this.speechStartTime;
         const remainingEstimatedTime = Math.max(0, this.estimatedSpeechDuration - timeSinceLastSpeech);
 
-        // If current speech will likely overlap with next event
         if (remainingEstimatedTime > timeUntilNext + this.minGapBetweenSentences) {
             this.log(`Potential overlap detected. Remaining: ${remainingEstimatedTime.toFixed(1)}s, Time until next: ${timeUntilNext.toFixed(1)}s`);
-
-            // Consider speeding up speech if possible
+            
             if (AndroidTTS && typeof AndroidTTS.setSpeechRate === 'function') {
                 const speedMultiplier = Math.min(1.5, remainingEstimatedTime / (timeUntilNext + this.minGapBetweenSentences));
                 if (speedMultiplier > 1.1) {
@@ -382,14 +678,8 @@ function extractYouTubeVideoIDFromCurrentPage() {
     }
 
     resetToTime(time) {
-        // Stop current speech and clear queue
-        if (AndroidTTS && typeof AndroidTTS.stopSpeaking === 'function') {
-            AndroidTTS.stopSpeaking();
-        }
-        this.currentlySpeaking = false;
-        this.speechQueue = [];
+        this.stopCurrentSpeech();
 
-        // Reset speech rate to normal
         if (AndroidTTS && typeof AndroidTTS.setSpeechRate === 'function') {
             AndroidTTS.setSpeechRate(1.0);
         }
@@ -414,15 +704,14 @@ function extractYouTubeVideoIDFromCurrentPage() {
     }
 }
 
-// Enhanced usage with smart timing
+// Initialize with DOM controls and filtering
 if (AndroidTTS) {
-    console.log("AndroidTTS interface found. Initializing system with smart timing.");
+    console.log("AndroidTTS interface found. Initializing system with controls and filtering.");
 
     const eventSystem = new TimedEventSystem({
         debug: true,
         targetLanguage: 'ar',
         onEvent: (event) => {
-            // This is now primarily for logging, as speech is handled by the smart timing system
             console.log(`EVENT FIRED at ${event.time.toFixed(2)}s: "${event.text}"`);
         }
     });
