@@ -6,11 +6,9 @@ const resolvers = new Map();
   window.image__myInjectedScriptHasRun__ = true;
 
 
-  return
-  console.log("loaded from js 1");
-  console.time("loaded from js");
-  let images = document.querySelectorAll("img");
 
+  let images = document.querySelectorAll("img");
+console.log("images here", JSON.stringify(images))
   for (let image of images) {
     let imageSrc = image.src;
     const skipKeywords = [
@@ -29,21 +27,74 @@ const resolvers = new Map();
     if (lowercasedSrc.endsWith(".svg") || lowercasedSrc.endsWith(".ico")) {
       continue;
     }
-    console.log("loaded from js 2:", imageSrc);
+    console.log("images image1:", imageSrc);
 
+    // Determine whether to use base64 based on image source
+    const useBase64 = shouldUseBase64(imageSrc);
+    
     let [coordinatesData, translationsMap] = await extractImage(
       imageSrc,
-      imageSrc
+      imageSrc,
+      useBase64
     );
-    if (coordinatesData.fullText.length < 3) continue;
+    
+    if (!coordinatesData || coordinatesData.fullText.length < 3) continue;
     translateImageText(image, coordinatesData, translationsMap);
   }
   console.timeEnd("loaded from js");
 })();
 
-async function extractImage(imageUrl, requestId) {
-  // Step 1: Extract text from image
-  AndroidApp.extractTextFromImage(imageUrl, requestId);
+function imageToBase64(img) {
+  return new Promise((resolve, reject) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      
+      ctx.drawImage(img, 0, 0);
+      
+      // Convert to base64 (without the data:image/png;base64, prefix)
+      const base64 = canvas.toDataURL('image/png').split(',')[1];
+      resolve(base64);
+    } catch (error) {
+      console.error('Error converting image to base64:', error);
+      reject(error);
+    }
+  });
+}
+
+// Update the extractImage function to support base64
+async function extractImage(imageUrl, requestId, useBase64 = false) {
+  console.log("loaded from js 5:", imageUrl, requestId, "useBase64:", useBase64);
+  
+  if (true) {
+    try {
+      // Create a new image element to load the image
+      const img = new Image();
+      img.crossOrigin = "anonymous"; // Handle CORS
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+      
+      // Convert to base64
+      const base64String = await imageToBase64(img);
+      
+      // Call Android method with base64
+      AndroidApp.extractTextFromImageBase64(base64String, requestId);
+    } catch (error) {
+      console.error("Error processing image as base64:", error);
+      // Fallback to URL method
+      AndroidApp.extractTextFromImage(imageUrl, requestId);
+    }
+  } else {
+    // Original URL method
+    AndroidApp.extractTextFromImage(imageUrl, requestId);
+  }
 
   // Step 2: Wait for extraction result
   let result = await waitForExtraction(requestId);
@@ -52,17 +103,16 @@ async function extractImage(imageUrl, requestId) {
 
   if (!result || !result.textBlocks || !Array.isArray(result.textBlocks)) {
     console.error("Invalid result format:", result);
-    return;
+    return [null, {}];
   }
 
   // Step 3: Get the original texts
   const originalTexts = result.textBlocks.map((block) => block.text);
   console.log("loaded from js 6.5:", JSON.stringify(originalTexts));
 
-  // Step 4: Translate the texts
   const translatedTexts = await translateTexts(originalTexts);
+  console.log("images translatedTexts", translatedTexts);
 
-  // Step 5: Build final translations map
   const translations = {};
   originalTexts.forEach((text, index) => {
     translations[text] = translatedTexts[index] || "";
@@ -88,7 +138,7 @@ function onExtractionResult(result, id) {
 }
 
 async function translateTexts(texts) {
-  const endpoint = "https://10.0.2.2:3001/translate/batch";
+  const endpoint = "https://browser-production-2e20.up.railway.app/translate/batch";
 
   try {
     const response = await fetch(endpoint, {
@@ -96,6 +146,7 @@ async function translateTexts(texts) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ texts }),
     });
+    console.log("🚀 ~ translateTexts ~ response:", response)
 
     if (!response.ok) throw new Error(`API error: ${response.statusText}`);
 
@@ -103,7 +154,7 @@ async function translateTexts(texts) {
     if (data.success && Array.isArray(data.results)) {
       return data.results.map((r) => r.translated || "");
     } else {
-      console.error("Unexpected response format", data);
+      console.error("Unexpected response format", JSON.stringify(data));
       return texts.map(() => ""); // fallback
     }
   } catch (err) {
@@ -541,5 +592,30 @@ canvas.style.display = imgStyles.display;
       ctx.fillStyle = style.color;
       ctx.fillText(line, xPosition, yPosition);
     });
+  }
+}
+
+/**
+ * Helper function to determine when to use base64
+ */
+function shouldUseBase64(imageUrl) {
+  // Use base64 for:
+  // 1. Data URLs
+  // 2. CORS-restricted images
+  // 3. Images from different domains (potential CORS issues)
+  
+  if (imageUrl.startsWith('data:')) {
+    return false; // Already base64, use URL method
+  }
+  
+  try {
+    const imgDomain = new URL(imageUrl).hostname;
+    const currentDomain = window.location.hostname;
+    
+    // Use base64 for cross-domain images to avoid CORS issues
+    return imgDomain !== currentDomain;
+  } catch (error) {
+    // If URL parsing fails, default to URL method
+    return false;
   }
 }

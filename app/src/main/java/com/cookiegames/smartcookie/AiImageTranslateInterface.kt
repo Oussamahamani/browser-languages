@@ -24,16 +24,8 @@ class AiImageTranslateInterface(private val view: WebView) {
 
 
 
-    /**
-     * Receives a URL and an ID from JavaScript. It analyzes the image at the URL to extract
-     * text, translates that text, and then sends the result back to a JavaScript
-     * function `onTranslationResult(translation, id)`.
-     *
-     * @param url The URL of the image to be analyzed.
-     * @param id A unique identifier to track the request in the WebView.
-     */
-    @SuppressLint("SuspiciousIndentation")
-    @JavascriptInterface
+
+@JavascriptInterface
     fun extractTextFromImage(url: String, id: String) {
         Log.i("webview", "Received translation request for ID: $id")
 
@@ -56,6 +48,34 @@ class AiImageTranslateInterface(private val view: WebView) {
             }
         }
     }
+@JavascriptInterface
+fun extractTextFromImageBase64(base64String: String, id: String) {
+    Log.i("webview", "extracting text from base64 image")
+
+    CoroutineScope(Dispatchers.IO).launch {
+        try {
+            val result = ImageTextAnalyzer.analyzeImageFromBase64(base64String)
+            Log.i("webview", "Base64 image analysis completed")
+
+            val jsCode = """onExtractionResult($result, ${quoted(id)})"""
+
+            view.post {
+                Log.i("webview", "calling onExtractionResult for base64")
+                view.evaluateJavascript(jsCode, null)
+            }
+        } catch (e: Exception) {
+            Log.e("webview", "Error analyzing base64 image: ${e.message}", e)
+            
+            // Return empty result on error
+            val errorResult = """{"fullText":"","textBlocks":[]}"""
+            val jsCode = """onExtractionResult($errorResult, ${quoted(id)})"""
+            
+            view.post {
+                view.evaluateJavascript(jsCode, null)
+            }
+        }
+    }
+}
 
     /**
      * Wraps a string in quotes and escapes any internal quotes for safe

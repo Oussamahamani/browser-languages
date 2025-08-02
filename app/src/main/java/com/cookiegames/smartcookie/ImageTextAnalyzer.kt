@@ -7,6 +7,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Rect
+import android.util.Base64
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.Text
@@ -105,40 +106,112 @@ object ImageTextAnalyzer {
                 val response = httpClient.newCall(request).execute()
 
                 if (!response.isSuccessful) {
-                    throw IOException("Failed to download image from")
+                    val errorMessage = when (response.code()) {
+                        404 -> "Image not found at URL: $imageUrl (HTTP 404)"
+                        403 -> "Access forbidden to image at URL: $imageUrl (HTTP 403)"
+                        401 -> "Authentication required for image at URL: $imageUrl (HTTP 401)"
+                        500 -> "Server error when fetching image from URL: $imageUrl (HTTP 500)"
+                        503 -> "Service unavailable when fetching image from URL: $imageUrl (HTTP 503)"
+                        else -> "Failed to download image from URL: $imageUrl (HTTP ${response.code()})"
+                    }
+                    throw IOException(errorMessage)
                 }
 
-                response.body()?.byteStream()?.use { inputStream ->
-                    BitmapFactory.decodeStream(inputStream)
+                try {
+                    response.body()?.byteStream()?.use { inputStream ->
+                        BitmapFactory.decodeStream(inputStream)
+                    }
+                } catch (e: Exception) {
+                    throw IOException("Failed to read image data from URL: $imageUrl. Error: ${e.message}", e)
                 }
             }
 
             if (bitmap == null) {
-                throw IOException("Failed to decode bitmap from URL: $imageUrl. Image might be invalid or corrupted.")
+                throw IOException("Failed to decode bitmap from URL: $imageUrl. The file may not be a valid image format (supported: JPEG, PNG, GIF, BMP, WebP) or the image data may be corrupted.")
             }
 
             // 2. Process the image with ML Kit on the Main dispatcher (ML Kit often prefers main thread for setup)
             val recognizedText: Text = withContext(Dispatchers.Main) {
-                val image = InputImage.fromBitmap(bitmap, 0) // 0 is rotationDegrees (no rotation)
-                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                try {
+                    val image = InputImage.fromBitmap(bitmap, 0) // 0 is rotationDegrees (no rotation)
+                    val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
-                // Await the ML Kit task result
-                recognizer.process(image).await()
+                    // Await the ML Kit task result
+                    recognizer.process(image).await()
+                } catch (e: Exception) {
+                    throw Exception("ML Kit text recognition failed for image from URL: $imageUrl. This could be due to: image quality issues, unsupported image format, or ML Kit initialization problems. Error: ${e.message}", e)
+                }
             }
 
             // 3. Map ML Kit's Text object to our custom data classes for flattened output
-            val recognizedData = mapVisionTextToRecognizedTextData(recognizedText)
+            val recognizedData = try {
+                mapVisionTextToRecognizedTextData(recognizedText)
+            } catch (e: Exception) {
+                throw Exception("Failed to process recognized text data from image at URL: $imageUrl. Error: ${e.message}", e)
+            }
 
             // 4. Convert the data class to a JSON string
-            return json.encodeToString(recognizedData) // Serialize to JSON string
+            return try {
+                json.encodeToString(recognizedData) // Serialize to JSON string
+            } catch (e: Exception) {
+                throw Exception("Failed to serialize recognized text data to JSON for image from URL: $imageUrl. Error: ${e.message}", e)
+            }
 
-        } catch (e: Exception) {
-            // Log the error for debugging purposes
-            Log.e(TAG, "Error analyzing image from URL: $imageUrl", e)
-            // Re-throw the exception so the caller can handle it
+        } catch (e: IOException) {
+            // Network or image decoding related errors
+            Log.e(TAG, "IO Error analyzing image from URL: $imageUrl - ${e.message}", e)
             throw e
+        } catch (e: SecurityException) {
+            // Permission or security related errors
+            val errorMessage = "Security error when analyzing image from URL: $imageUrl. Check internet permissions and URL accessibility. Error: ${e.message}"
+            Log.e(TAG, errorMessage, e)
+            throw SecurityException(errorMessage, e)
+        } catch (e: OutOfMemoryError) {
+            // Memory related errors
+            val errorMessage = "Out of memory error when processing image from URL: $imageUrl. The image may be too large. Consider using a smaller image or optimizing memory usage."
+            Log.e(TAG, errorMessage, e)
+            throw OutOfMemoryError(errorMessage)
+        } catch (e: IllegalArgumentException) {
+            // Invalid arguments or malformed URL
+            val errorMessage = "Invalid argument when analyzing image from URL: $imageUrl. Check if the URL is properly formatted. Error: ${e.message}"
+            Log.e(TAG, errorMessage, e)
+            throw IllegalArgumentException(errorMessage, e)
+        } catch (e: Exception) {
+            // Generic fallback for any other unexpected errors
+            val errorMessage = "Unexpected error analyzing image from URL: $imageUrl. Error type: ${e.javaClass.simpleName}, Message: ${e.message}"
+            Log.e(TAG, errorMessage, e)
+            throw Exception(errorMessage, e)
         } finally {
             // Ensure the bitmap is recycled to free up memory, regardless of success or failure
+            bitmap?.recycle()
+        }
+    }
+
+    /**
+     * Analyzes text from a Base64 encoded image string.
+     */
+    suspend fun analyzeImageFromBase64(base64String: String): String {
+        var bitmap: Bitmap? = null
+        try {
+            bitmap = withContext(Dispatchers.IO) {
+                try {
+                    val imageBytes = Base64.decode(base64String, Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                        ?: throw IOException("Failed to decode image from Base64 string. The string may not be valid Base64 or may not represent a valid image format.")
+                } catch (e: IllegalArgumentException) {
+                    throw IOException("Invalid Base64 string format. Error: ${e.message}", e)
+                }
+            }
+
+            return processImageWithMLKit(bitmap)
+        } catch (e: IOException) {
+            Log.e(TAG, "IO Error analyzing Base64 image - ${e.message}", e)
+            throw e
+        } catch (e: Exception) {
+            val errorMessage = "Unexpected error analyzing Base64 image. Error type: ${e.javaClass.simpleName}, Message: ${e.message}"
+            Log.e(TAG, errorMessage, e)
+            throw Exception(errorMessage, e)
+        } finally {
             bitmap?.recycle()
         }
     }
@@ -159,6 +232,24 @@ object ImageTextAnalyzer {
             fullText = visionText.text, // The complete recognized text string
             textBlocks = textBlocksData
         )
+    }
+
+    /**
+     * Common method to process bitmap with ML Kit and return JSON.
+     */
+    private suspend fun processImageWithMLKit(bitmap: Bitmap): String {
+        val recognizedText: Text = withContext(Dispatchers.Main) {
+            try {
+                val image = InputImage.fromBitmap(bitmap, 0)
+                val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+                recognizer.process(image).await()
+            } catch (e: Exception) {
+                throw Exception("ML Kit text recognition failed. Error: ${e.message}", e)
+            }
+        }
+
+        val recognizedData = mapVisionTextToRecognizedTextData(recognizedText)
+        return json.encodeToString(recognizedData)
     }
 }
 
