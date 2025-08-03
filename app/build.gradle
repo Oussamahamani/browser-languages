@@ -62,17 +62,17 @@ android {
         scMain {
             dimension "capabilities"
             applicationId "com.cookiegames.smartcookie"
-            resValue "string", "app_name", "SmartCookieWeb"
+            resValue "string", "app_name", "PolyNet"
         }
         stable {
             dimension "capabilities"
             applicationId "com.cookiegames.smartcookie"
-            resValue "string", "app_name", "SmartCookieWeb"
+            resValue "string", "app_name", "PolyNet"
         }
         beta {
             dimension 'capabilities'
             applicationId 'com.cookiejarapps.smartcookiebeta'
-            resValue "string", "app_name", "SmartCookieWeb beta"
+            resValue "string", "app_name", "PolyNet beta"
             versionCode 16
             versionName "17.0-beta4"
         }
