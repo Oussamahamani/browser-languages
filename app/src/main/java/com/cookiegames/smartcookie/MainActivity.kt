@@ -75,7 +75,7 @@ class MainActivity : BrowserActivity() {
 
 
 //            runLlmInference()
-            // LlmInferenceManager.initialize(this@MainActivity)
+            LlmInferenceManager.initialize(this@MainActivity)
 //            val reply = LlmInferenceManager.translate("Hello I am from france")
 //            Log.d("LLM", "Response: $reply")
 
