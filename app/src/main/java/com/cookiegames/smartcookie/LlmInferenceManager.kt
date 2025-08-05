@@ -29,7 +29,9 @@ object LlmInferenceManager {
     // Load balancing queue system
     private val requestQueue = mutableListOf<TranslationRequest>()
     private var isProcessingQueue = false
-    private var lastProcessedSource: String? = null
+    private val sourceQueues = mutableMapOf<String, MutableList<TranslationRequest>>()
+    private var currentSourceIndex = 0
+    private var activeSources = mutableListOf<String>()
 
     data class TranslationRequest(
         val text: String,
@@ -129,9 +131,17 @@ object LlmInferenceManager {
         return suspendCancellableCoroutine { continuation ->
             val request = TranslationRequest(text, targetLanguage, source, continuation)
             
-            synchronized(requestQueue) {
-                requestQueue.add(request)
-                Log.d(TAG, "Queued translation request from $source (queue size: ${requestQueue.size})")
+            synchronized(sourceQueues) {
+                // Add to source-specific queue
+                if (!sourceQueues.containsKey(source)) {
+                    sourceQueues[source] = mutableListOf()
+                    activeSources.add(source)
+                    Log.d(TAG, "New source detected: $source (total sources: ${activeSources.size})")
+                }
+                sourceQueues[source]!!.add(request)
+                
+                val totalRequests = sourceQueues.values.sumOf { it.size }
+                Log.d(TAG, "Queued translation request from $source (total requests: $totalRequests, sources: ${activeSources.size})")
             }
             
             processQueueIfNeeded()
@@ -175,17 +185,31 @@ object LlmInferenceManager {
     }
     
     private fun getNextRequestWithLoadBalancing(): TranslationRequest? {
-        synchronized(requestQueue) {
-            if (requestQueue.isEmpty()) return null
+        synchronized(sourceQueues) {
+            // Remove empty source queues
+            val emptySourcesKeys = sourceQueues.keys.filter { sourceQueues[it]!!.isEmpty() }
+            emptySourcesKeys.forEach { sourceKey ->
+                sourceQueues.remove(sourceKey)
+                activeSources.remove(sourceKey)
+            }
             
-            // Round-robin: try to pick from different source than last processed
-            val differentSourceRequest = requestQueue.find { it.source != lastProcessedSource }
-            val request = differentSourceRequest ?: requestQueue.first()
+            if (activeSources.isEmpty()) return null
             
-            requestQueue.remove(request)
-            lastProcessedSource = request.source
+            // True round-robin: cycle through active sources
+            if (currentSourceIndex >= activeSources.size) {
+                currentSourceIndex = 0
+            }
             
-            Log.d(TAG, "Processing request from ${request.source} (${requestQueue.size} remaining)")
+            val currentSource = activeSources[currentSourceIndex]
+            val sourceQueue = sourceQueues[currentSource]!!
+            val request = sourceQueue.removeAt(0)
+            
+            // Move to next source for next request
+            currentSourceIndex = (currentSourceIndex + 1) % activeSources.size
+            
+            val totalRequests = sourceQueues.values.sumOf { it.size }
+            Log.d(TAG, "Processing request from $currentSource (total remaining: $totalRequests, active sources: ${activeSources.size})")
+            
             return request
         }
     }
