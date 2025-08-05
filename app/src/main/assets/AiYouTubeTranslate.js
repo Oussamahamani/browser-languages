@@ -9,7 +9,7 @@
   if (window.__myInjectedYoutubeScriptHasRun__) return;
   window.__myInjectedYoutubeScriptHasRun__ = true;
   // SVGs for the icons
-
+return
   let isRunning = false;
   let debounceTimer = null;
   let lastUrl = location.href;

@@ -22,23 +22,16 @@ import kotlinx.coroutines.withContext
 
 
 import androidx.appcompat.app.AppCompatActivity
+//import com.example.utils.TextToSpeechManager
 import java.util.Locale
 
 class MainActivity : BrowserActivity() {
+//    private lateinit var ttsManager: TextToSpeechManager
 
     private var tts: TextToSpeech? = null // Declare TextToSpeech instance
     // Define the language and Arabic text to test
-    private val testLanguage: Locale = Locale("ar") // Use "ar" for Arabic
-    private val textToSpeak: String = "قَوْسُ قُزَحْ، يُسَمَّى كَذَلِكَ: قَوْسُ الْمَطَرِ أَوْ قَوْسُ الْأَلْوَانِ، وَهُوَ ظَاهِرَةٌ طَبِيعِيَّةٌ فِزْيَائِيَّةٌ نَاتِجَةٌ عَنِ انْكِسَارِ وَتَحَلُّلِ ضَوْءِ الشَّمْسِ خِلالَ قَطْرَةِ مَاءِ الْمَطَرِ.\n" +
-            "\n" // "Hello, this is an automatic voice test in Arabic."
+    private val TEST_IMAGE_URL = "https://www.bls.gov/blog/2017/images/women-at-work.png"    // Another example: "https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png"
 
-    private lateinit var statusTextView: TextView
-    private lateinit var fullRecognizedTextView: TextView
-    private lateinit var detailedRecognizedTextView: TextView
-
-    // Define a sample URL for testing. You can replace this with any image URL containing text.
-    private val TEST_IMAGE_URL = "https://acropolis-wp-content-uploads.s3.us-west-1.amazonaws.com/02-women-leveling-up-in-STEM.png"    // Another example: "https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png"
-    // Or a URL to an image with more complex text.
 
 
     @Suppress("DEPRECATION")
@@ -57,10 +50,25 @@ class MainActivity : BrowserActivity() {
         super.onCreate(savedInstanceState)
 
         lifecycleScope.launch {
-                 val success = TextToSpeechManager.initialize(this@MainActivity)
+
+               val isInitialized = withContext(Dispatchers.IO) {
+                LlmInferenceManager.initialize(this@MainActivity)
+            }
+            if (isInitialized) {
+                Log.d("MainActivitychromium", "LLM ready to use:")
+                
+                // Make calls sequentially, not simultaneously
+
+            } else {
+                Log.e("MainActivitychromium", "LLM initialization failed")
+            }
+
+            
+            val success = TextToSpeechManager.initialize(this@MainActivity)
             if (success) {
+                // Optionally set language (default is system language)
                 TextToSpeechManager.setLanguage(Locale.US)
-                val spanishSet = TextToSpeechManager.setLanguage(Locale("es"))
+                val arabicSet = TextToSpeechManager.setLanguage(Locale("ar"))
 
                 Log.d("MainActivity", "TTS initialized successfully")
             } else {
@@ -68,7 +76,10 @@ class MainActivity : BrowserActivity() {
             }
 
 
-            // LlmInferenceManager.initialize(this@MainActivity)
+
+         
+//          var reply = LlmInferenceManager.translate("Hello I am from france")
+
 
         }
     }

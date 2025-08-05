@@ -5,7 +5,7 @@ const resolvers = new Map();
   if (window.image__myInjectedScriptHasRun__) return;
   window.image__myInjectedScriptHasRun__ = true;
 
-
+return
 
   let images = document.querySelectorAll("img");
 console.log("images here", JSON.stringify(images))
