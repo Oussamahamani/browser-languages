@@ -73,7 +73,7 @@ class AiImageTranslateInterface(private val view: WebView) {
                         // Add timeout per translation
                         val translated = withTimeout(30000) { // 30 seconds timeout
                             Log.i("IMAGE_TRANSLATE", "Inside timeout block, calling translate...")
-                            val result = LlmInferenceManager.translateToLanguage(text, "french", "image-translator")
+                            val result = LlmInferenceManager.translateToLanguage(text, "image-translator")
                             Log.i("IMAGE_TRANSLATE", "LlmInferenceManager.translate() returned: ${if (result != null) "SUCCESS (${result.length} chars)" else "NULL"}")
                             result
                         }

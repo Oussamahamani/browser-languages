@@ -201,10 +201,10 @@ object LlmInferenceManager {
     /**
      * Legacy method for backward compatibility - now uses user's selected language
      */
-    @Deprecated("Use translateToLanguage(text, source) instead")
-    suspend fun translateToLanguage(text: String, targetLanguage: String): String? {
-        return translateToLanguage(text, "legacy")
-    }
+    // @Deprecated("Use translateToLanguage(text, source) instead")
+    // suspend fun translateToLanguage(text: String, targetLanguage: String): String? {
+    //     return translateToLanguage(text, "legacy")
+    // }
 
     /**
      * Legacy method for backward compatibility - now uses user's selected language

@@ -23,7 +23,7 @@
             /^\d{1,2}\/\d{1,2}\/\d{2,4}$/, // Dates
         ]
     };
-return
+
     let nodeGroups = new Map();
     let translationProgress = { total: 0, completed: 0, failed: 0 };
 

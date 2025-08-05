@@ -3,6 +3,7 @@ package com.cookiegames.smartcookie
 import android.util.Log
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import com.cookiegames.smartcookie.preference.UserPreferences
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,11 +12,7 @@ class AITranslateInterface(private val view: WebView) {
     // Use a dedicated scope for translations
     private val translationScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
-    @JavascriptInterface
-    fun getUserLanguage(): String {
-        Log.i("webview", "working")
-        return "by world "
-    }
+
 
     @JavascriptInterface
     fun translateWithId(text: String, id: String) {
@@ -37,7 +34,7 @@ class AITranslateInterface(private val view: WebView) {
                         return@withTimeout
                     }
 
-                    val translated = LlmInferenceManager.translateToLanguage(text, "french", "page-translator")
+                    val translated = LlmInferenceManager.translateToLanguage(text, "page-translator")
 
                     if (translated != null && translated.isNotBlank()) {
                         Log.i("LLM_PROMPT-translation", "Success for id $id: $translated")
@@ -105,7 +102,7 @@ class AITranslateInterface(private val view: WebView) {
                         // Add timeout per translation with more logging
                         val translated = withTimeout(30000) { // Increased to 30 seconds
                             Log.i("LLM_PROMPT", "Inside timeout block, calling translate...")
-                            val result = LlmInferenceManager.translateToLanguage(text, "french", "page-translator")
+                            val result = LlmInferenceManager.translateToLanguage(text, "page-translator")
                             Log.i("LLM_PROMPT", "LlmInferenceManager.translate() returned: ${if (result != null) "SUCCESS (${result.length} chars)" else "NULL"}")
                             result
                         }

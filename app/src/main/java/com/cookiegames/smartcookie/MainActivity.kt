@@ -80,16 +80,16 @@ class MainActivity : BrowserActivity() {
 
         lifecycleScope.launch {
             val isInitialized = withContext(Dispatchers.IO) {
-                //     LlmInferenceManager.initialize(this@MainActivity)
-                // }
-                // if (isInitialized) {
-                //     Log.d("MainActivitychromium", "LLM ready to use:")
+                     LlmInferenceManager.initialize(this@MainActivity)
+                 }
+                 if (isInitialized) {
+                     Log.d("MainActivitychromium", "LLM ready to use:")
 
-                //     // Make calls sequentially, not simultaneously
+                     // Make calls sequentially, not simultaneously
 
-                // } else {
-                //     Log.e("MainActivitychromium", "LLM initialization failed")
-                // }
+                 } else {
+                     Log.e("MainActivitychromium", "LLM initialization failed")
+                 }
 
 
                 val success = TextToSpeechManager.initialize(this@MainActivity)
@@ -107,7 +107,7 @@ class MainActivity : BrowserActivity() {
 //          var reply = LlmInferenceManager.translate("Hello I am from france")
 
 
-            }
+
         }
     }
         private fun initLoadingUI() {
