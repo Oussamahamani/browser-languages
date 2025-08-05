@@ -383,7 +383,7 @@ class SmartCookieWebClient(
 
         view.settings.javaScriptEnabled = true
         view.addJavascriptInterface(AITranslateInterface(view), "TranslateApp")
-        view.addJavascriptInterface(AiYouTubeTranslateInterface(view), "AndroidTTS")
+        view.addJavascriptInterface(AiYouTubeTranslateInterface(view), "AndroidInterface")
         view.addJavascriptInterface(AiImageTranslateInterface(view), "AndroidApp")
 
         if (!aiTranslateInjected ) {

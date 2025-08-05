@@ -120,7 +120,7 @@
     }
 
     stopCurrentSpeech() {
-      AndroidTTS?.stopSpeaking();
+      AndroidInterface?.stopSpeaking();
       this.currentlySpeaking = false;
       this.speechQueue = [];
     }
@@ -201,21 +201,21 @@
     }
 
     speakWithSmartTiming(text) {
-      if (!AndroidTTS?.speak) return;
+      if (!AndroidInterface?.speak) return;
 
       this.currentlySpeaking = true;
       this.speechStartTime = this.video.currentTime;
       this.estimatedSpeechDuration = this.estimateSpeechDuration(text);
 
-      if (AndroidTTS.speakWithCallback) {
+      if (AndroidInterface.speakWithCallback) {
         const callbackName = `speechComplete_${Date.now()}`;
         window[callbackName] = () => {
           this.onSpeechComplete();
           delete window[callbackName];
         };
-        AndroidTTS.speakWithCallback(text, callbackName);
+        AndroidInterface.speakWithCallback(text, callbackName);
       } else {
-        AndroidTTS.speak(text);
+        AndroidInterface.speak(text);
         setTimeout(() => this.onSpeechComplete(), this.estimatedSpeechDuration * 1000);
       }
     }
@@ -355,7 +355,7 @@
 
     resetToTime(time) {
       this.stopCurrentSpeech();
-      AndroidTTS?.setSpeechRate?.(1.0);
+      AndroidInterface?.setSpeechRate?.(1.0);
 
       this.events.forEach(event => {
         if (event.time >= time) event.fired = false;
@@ -384,7 +384,7 @@
       }
 
       if (window.location.hostname.includes("youtube.com") && 
-          window.location.pathname === "/watch" && AndroidTTS) {
+          window.location.pathname === "/watch" && AndroidInterface) {
         currentEventSystem = new TimedEventSystem({
           debug: true,
           targetLanguage: "ar",
