@@ -59,12 +59,13 @@ class MainActivity : BrowserActivity() {
         // Initialize UI elements
         initLoadingUI()
 
-        // Set up LLM loading callback
+        // Set up LLM loading callback and user preferences
         LlmInferenceManager.setLoadingCallback { isLoading, message ->
             runOnUiThread {
                 updateLoadingState(isLoading, message)
             }
         }
+        LlmInferenceManager.setUserPreferences(userPreferences)
 
         // Show language selection dialog if language is not set
         if (userPreferences.selectedLanguage.isEmpty()) {

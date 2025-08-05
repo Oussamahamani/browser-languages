@@ -2,6 +2,7 @@ package com.cookiegames.smartcookie
 
 import android.content.Context
 import android.util.Log
+import com.cookiegames.smartcookie.preference.UserPreferences
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
@@ -26,6 +27,9 @@ object LlmInferenceManager {
     private var loadingCallback: ((Boolean, String?) -> Unit)? = null
     private val translationMutex = Mutex()
     
+    // UserPreferences instance to get selected language
+    private var userPreferences: UserPreferences? = null
+    
     // Load balancing queue system
     private val requestQueue = mutableListOf<TranslationRequest>()
     private var isProcessingQueue = false
@@ -35,7 +39,6 @@ object LlmInferenceManager {
 
     data class TranslationRequest(
         val text: String,
-        val targetLanguage: String,
         val source: String, // identifier for the requesting script
         val continuation: kotlin.coroutines.Continuation<String?>
     )
@@ -56,6 +59,53 @@ object LlmInferenceManager {
         val engine: LlmInference,
         var session: LlmInferenceSession
     )
+
+    /**
+     * Set the UserPreferences instance to access selected language
+     */
+    fun setUserPreferences(preferences: UserPreferences) {
+        userPreferences = preferences
+    }
+
+    /**
+     * Convert language code to language name for LLM prompts
+     */
+    private fun getLanguageNameFromCode(languageCode: String): String {
+        return when (languageCode) {
+            "en" -> "english"
+            "ar" -> "arabic"
+            "cs" -> "czech"
+            "de" -> "german"
+            "el" -> "greek"
+            "es" -> "spanish"
+            "fa" -> "persian"
+            "fr" -> "french"
+            "hu" -> "hungarian"
+            "it" -> "italian"
+            "iw" -> "hebrew"
+            "ja" -> "japanese"
+            "ko" -> "korean"
+            "lt" -> "lithuanian"
+            "nl" -> "dutch"
+            "pl" -> "polish"
+            "pt" -> "portuguese"
+            "pt-rBR" -> "portuguese"
+            "ru" -> "russian"
+            "sr" -> "serbian"
+            "tr" -> "turkish"
+            "zh-rCN" -> "chinese"
+            "zh-rTW" -> "chinese"
+            else -> "english" // Default fallback
+        }
+    }
+
+    /**
+     * Get the current target language from user preferences
+     */
+    private fun getCurrentTargetLanguage(): String {
+        val selectedLanguage = userPreferences?.selectedLanguage?.ifEmpty { "en" } ?: "en"
+        return getLanguageNameFromCode(selectedLanguage)
+    }
 
     suspend fun initialize(context: Context, config: Config): Boolean = withContext(Dispatchers.IO) {
         if (llmInference != null && !isInitializing) {
@@ -118,18 +168,18 @@ object LlmInferenceManager {
     }
 
     /**
-     * Translate text to Arabic with session reset (based on Google's pattern)
+     * Translate text using the user's selected language (based on Google's pattern)
      */
     suspend fun translate(promptText: String): String? = withContext(Dispatchers.IO) {
-        return@withContext translateToLanguage(promptText, "french")
+        return@withContext translateToLanguage(promptText, "default")
     }
 
     /**
-     * Translate text with load balancing between different sources
+     * Translate text with load balancing between different sources using user's selected language
      */
-    suspend fun translateToLanguage(text: String, targetLanguage: String, source: String = "default"): String? {
+    suspend fun translateToLanguage(text: String, source: String = "default"): String? {
         return suspendCancellableCoroutine { continuation ->
-            val request = TranslationRequest(text, targetLanguage, source, continuation)
+            val request = TranslationRequest(text, source, continuation)
             
             synchronized(sourceQueues) {
                 // Add to source-specific queue
@@ -149,10 +199,19 @@ object LlmInferenceManager {
     }
 
     /**
-     * Legacy method for backward compatibility
+     * Legacy method for backward compatibility - now uses user's selected language
      */
+    @Deprecated("Use translateToLanguage(text, source) instead")
     suspend fun translateToLanguage(text: String, targetLanguage: String): String? {
-        return translateToLanguage(text, targetLanguage, "legacy")
+        return translateToLanguage(text, "legacy")
+    }
+
+    /**
+     * Legacy method for backward compatibility - now uses user's selected language
+     */
+    @Deprecated("Use translateToLanguage(text, source) instead")
+    suspend fun translateToLanguage(text: String, targetLanguage: String, source: String): String? {
+        return translateToLanguage(text, source)
     }
     
     private fun processQueueIfNeeded() {
@@ -171,7 +230,8 @@ object LlmInferenceManager {
             val nextRequest = getNextRequestWithLoadBalancing() ?: break
             
             try {
-                val result = performTranslation(nextRequest.text, nextRequest.targetLanguage, nextRequest.source)
+                val targetLanguage = getCurrentTargetLanguage()
+                val result = performTranslation(nextRequest.text, targetLanguage, nextRequest.source)
                 nextRequest.continuation.resume(result)
             } catch (e: Exception) {
                 Log.e(TAG, "Error in translation for ${nextRequest.source}", e)
