@@ -28,7 +28,7 @@
     let translationProgress = { total: 0, completed: 0, failed: 0 };
 
     console.log('🌐 Page Translator: Starting translation...');
-
+return
     /**
      * Check if text should be translated
      */

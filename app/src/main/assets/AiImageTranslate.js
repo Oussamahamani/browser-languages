@@ -5,7 +5,7 @@ const resolvers = new Map();
   if (window.image__myInjectedScriptHasRun__) return;
   window.image__myInjectedScriptHasRun__ = true;
 
-return
+
 
   let images = document.querySelectorAll("img");
 console.log("images here", JSON.stringify(images))
@@ -139,29 +139,56 @@ function onExtractionResult(result, id) {
 }
 
 async function translateTexts(texts) {
-  const endpoint = "https://browser-production-2e20.up.railway.app/translate/batch";
+  console.log("🌐 Starting batch translation using LlmInferenceManager for", texts.length, "texts");
+  
+  return new Promise((resolve) => {
+    const translations = {};
+    let processedCount = 0;
+    let totalCount = texts.length;
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texts, language:'spanish' }),
-    });
-    console.log("🚀 ~ translateTexts ~ response:", response)
-
-    if (!response.ok) throw new Error(`API error: ${response.statusText}`);
-
-    const data = await response.json();
-    if (data.success && Array.isArray(data.results)) {
-      return data.results.map((r) => r.translated || "");
-    } else {
-      console.error("Unexpected response format", JSON.stringify(data));
-      return texts.map(() => ""); // fallback
+    if (totalCount === 0) {
+      resolve([]);
+      return;
     }
-  } catch (err) {
-    console.error("❌ Translation failed:", err.message);
-    return texts.map(() => ""); // fallback
-  }
+
+    // Global callback functions for Android batch translation
+    window.onImageBatchTranslationResult = function(originalText, translation, index, total) {
+      console.log(`📝 Image translation result ${index}/${total}:`, originalText.substring(0, 30), "->", translation ? translation.substring(0, 30) : "null");
+      
+      if (translation) {
+        translations[originalText] = translation;
+      } else {
+        translations[originalText] = "";  // Fallback for failed translations
+        console.warn(`❌ Translation failed for: "${originalText.substring(0, 50)}..."`);
+      }
+      
+      processedCount++;
+    };
+
+    window.onImageBatchTranslationComplete = function() {
+      console.log('🎉 Image batch translation completed!');
+      console.log(`📈 Stats: ${processedCount} processed out of ${totalCount} total`);
+      
+      // Map results back to original order
+      const results = texts.map(text => translations[text] || "");
+      resolve(results);
+    };
+
+    window.onImageBatchTranslationError = function(error) {
+      console.error('❌ Image batch translation error:', error);
+      // Return empty translations on error
+      resolve(texts.map(() => ""));
+    };
+
+    // Start batch translation using AndroidApp interface
+    if (typeof AndroidApp !== 'undefined' && AndroidApp.translateImageTexts) {
+      console.log("📤 Sending texts to AndroidApp for batch translation...");
+      AndroidApp.translateImageTexts(JSON.stringify(texts));
+    } else {
+      console.error('❌ AndroidApp.translateImageTexts not available');
+      resolve(texts.map(() => "")); // fallback
+    }
+  });
 }
 
 function translateImageText(imgElement, coordinatesData, translationsMap, options = {}) {
