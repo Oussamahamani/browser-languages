@@ -6,6 +6,12 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import kotlin.coroutines.resume
 
 /**
  * LLM Inference Manager based on Google AI Edge Gallery patterns
@@ -18,6 +24,19 @@ object LlmInferenceManager {
     private var isInitializing = false
     private var currentConfig: Config? = null
     private var loadingCallback: ((Boolean, String?) -> Unit)? = null
+    private val translationMutex = Mutex()
+    
+    // Load balancing queue system
+    private val requestQueue = mutableListOf<TranslationRequest>()
+    private var isProcessingQueue = false
+    private var lastProcessedSource: String? = null
+
+    data class TranslationRequest(
+        val text: String,
+        val targetLanguage: String,
+        val source: String, // identifier for the requesting script
+        val continuation: kotlin.coroutines.Continuation<String?>
+    )
 
     data class Config(
         val modelPath: String,
@@ -104,49 +123,117 @@ object LlmInferenceManager {
     }
 
     /**
-     * Translate text to any target language with automatic session management
+     * Translate text with load balancing between different sources
      */
-    suspend fun translateToLanguage(text: String, targetLanguage: String): String? = withContext(Dispatchers.IO) {
-        val session = currentSession
-        if (session == null || llmInference == null) {
-            Log.e(TAG, "LLM not initialized. Call initialize() first.")
-            return@withContext null
+    suspend fun translateToLanguage(text: String, targetLanguage: String, source: String = "default"): String? {
+        return suspendCancellableCoroutine { continuation ->
+            val request = TranslationRequest(text, targetLanguage, source, continuation)
+            
+            synchronized(requestQueue) {
+                requestQueue.add(request)
+                Log.d(TAG, "Queued translation request from $source (queue size: ${requestQueue.size})")
+            }
+            
+            processQueueIfNeeded()
         }
+    }
 
-        try {
-            val startTime = System.currentTimeMillis()
-            val prompt = "Translate this text to $targetLanguage. Return only the translation, no explanations: $text"
-
-            Log.d(TAG, "Translating to $targetLanguage: ${text.take(50)}...")
-
-            // Reset session before each translation to ensure clean state
-            // This is similar to how Google's example handles independent queries
-            if (!resetSessionInternal()) {
-                Log.e(TAG, "Failed to reset session before translation")
+    /**
+     * Legacy method for backward compatibility
+     */
+    suspend fun translateToLanguage(text: String, targetLanguage: String): String? {
+        return translateToLanguage(text, targetLanguage, "legacy")
+    }
+    
+    private fun processQueueIfNeeded() {
+        synchronized(this) {
+            if (isProcessingQueue) return
+            isProcessingQueue = true
+        }
+        
+        kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
+            processQueue()
+        }
+    }
+    
+    private suspend fun processQueue() {
+        while (true) {
+            val nextRequest = getNextRequestWithLoadBalancing() ?: break
+            
+            try {
+                val result = performTranslation(nextRequest.text, nextRequest.targetLanguage, nextRequest.source)
+                nextRequest.continuation.resume(result)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in translation for ${nextRequest.source}", e)
+                nextRequest.continuation.resume(null)
+            }
+        }
+        
+        synchronized(this) {
+            isProcessingQueue = false
+        }
+    }
+    
+    private fun getNextRequestWithLoadBalancing(): TranslationRequest? {
+        synchronized(requestQueue) {
+            if (requestQueue.isEmpty()) return null
+            
+            // Round-robin: try to pick from different source than last processed
+            val differentSourceRequest = requestQueue.find { it.source != lastProcessedSource }
+            val request = differentSourceRequest ?: requestQueue.first()
+            
+            requestQueue.remove(request)
+            lastProcessedSource = request.source
+            
+            Log.d(TAG, "Processing request from ${request.source} (${requestQueue.size} remaining)")
+            return request
+        }
+    }
+    
+    private suspend fun performTranslation(text: String, targetLanguage: String, source: String): String? = withContext(Dispatchers.IO) {
+        translationMutex.withLock {
+            val session = currentSession
+            if (session == null || llmInference == null) {
+                Log.e(TAG, "LLM not initialized. Call initialize() first.")
                 return@withContext null
             }
 
-            // Use the fresh session
-            val freshSession = currentSession!!
-            freshSession.addQueryChunk(prompt)
-            val response = freshSession.generateResponse()
+            try {
+                val startTime = System.currentTimeMillis()
+                val prompt = "Translate this text to $targetLanguage. Return only the translation, no explanations: $text"
 
-            val endTime = System.currentTimeMillis()
-            Log.d(TAG, "Translation completed in ${endTime - startTime}ms")
-            Log.d(TAG, "Response: ${response.take(100)}...")
+                Log.d(TAG, "[$source] Translating to $targetLanguage: ${text.take(50)}...")
 
-            response
+                // Reset session before each translation to ensure clean state
+                if (!resetSessionInternal()) {
+                    Log.e(TAG, "Failed to reset session before translation")
+                    return@withContext null
+                }
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Error generating translation", e)
-            null
+                // Use the fresh session
+                val freshSession = currentSession!!
+                freshSession.addQueryChunk(prompt)
+                val response = freshSession.generateResponse()
+
+                val endTime = System.currentTimeMillis()
+                Log.d(TAG, "[$source] Translation completed in ${endTime - startTime}ms")
+                Log.d(TAG, "[$source] Response: ${response.take(100)}...")
+
+                response
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating translation for $source", e)
+                null
+            }
         }
     }
 
     /**
      * Generate response for conversational use (maintains session state)
+     * Uses mutex to prevent concurrent access issues
      */
     suspend fun generateResponse(prompt: String, systemPrompt: String? = null): String? = withContext(Dispatchers.IO) {
+        translationMutex.withLock {
         val session = currentSession
         if (session == null || llmInference == null) {
             Log.e(TAG, "LLM not initialized. Call initialize() first.")
@@ -174,6 +261,7 @@ object LlmInferenceManager {
         } catch (e: Exception) {
             Log.e(TAG, "Error generating response", e)
             null
+        }
         }
     }
 
