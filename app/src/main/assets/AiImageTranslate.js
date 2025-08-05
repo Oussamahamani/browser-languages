@@ -4,7 +4,7 @@ const resolvers = new Map();
   "use strict";
   if (window.image__myInjectedScriptHasRun__) return;
   window.image__myInjectedScriptHasRun__ = true;
-return
+
 
 
   let images = document.querySelectorAll("img");
@@ -87,13 +87,13 @@ async function extractImage(imageUrl, requestId, useBase64 = false) {
       // Call Android method with base64
       AndroidApp.extractTextFromImageBase64(base64String, requestId);
     } catch (error) {
-      console.error("Error processing image as base64:", error);
+      console.error("Error processing image as base64:", error.message);
       // Fallback to URL method
-      AndroidApp.extractTextFromImage(imageUrl, requestId);
+      // AndroidApp.extractTextFromImage(imageUrl, requestId);
     }
   } else {
     // Original URL method
-    AndroidApp.extractTextFromImage(imageUrl, requestId);
+    // AndroidApp.extractTextFromImage(imageUrl, requestId);
   }
 
   // Step 2: Wait for extraction result
@@ -107,7 +107,8 @@ async function extractImage(imageUrl, requestId, useBase64 = false) {
   }
 
   // Step 3: Get the original texts
-  const originalTexts = result.textBlocks.map((block) => block.text);
+  const originalTexts = result.textBlocks.map((block) => block.text.trim());
+
   console.log("loaded from js 6.5:", JSON.stringify(originalTexts));
 
   const translatedTexts = await translateTexts(originalTexts);
@@ -144,7 +145,7 @@ async function translateTexts(texts) {
     const response = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texts }),
+      body: JSON.stringify({ texts, language:'spanish' }),
     });
     console.log("🚀 ~ translateTexts ~ response:", response)
 
@@ -158,7 +159,7 @@ async function translateTexts(texts) {
       return texts.map(() => ""); // fallback
     }
   } catch (err) {
-    console.error("❌ Translation failed:", err);
+    console.error("❌ Translation failed:", err.message);
     return texts.map(() => ""); // fallback
   }
 }
@@ -307,10 +308,10 @@ canvas.style.display = imgStyles.display;
           // Draw the translated text with enhanced styling
           drawTextInBox(ctx, translatedText, box, textStyle, config);
         } else {
-          console.warn(`No translation found for: "${originalText}" (block ${index})`);
+          console.warn(`No translation found for: "${originalText}" (block ${index})`,JSON.stringify(translations));
         }
       } catch (error) {
-        console.error(`Error processing text block ${index}:`, error);
+        console.error(`Error processing text block ${index}:`, error.message);
       }
     });
   }

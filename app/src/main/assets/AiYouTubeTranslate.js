@@ -9,7 +9,7 @@
   if (window.__myInjectedYoutubeScriptHasRun__) return;
   window.__myInjectedYoutubeScriptHasRun__ = true;
   // SVGs for the icons
-return
+
   let isRunning = false;
   let debounceTimer = null;
   let lastUrl = location.href;
@@ -486,7 +486,7 @@ return
         const response = await fetch(this.translationEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texts, targetLang: this.targetLanguage }),
+          body: JSON.stringify({ texts, language:'spanish' }),
         });
 
         if (!response.ok) {

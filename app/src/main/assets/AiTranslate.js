@@ -4,9 +4,8 @@
           if (window.__myInjectedScriptHasRun__) return;
       window.__myInjectedScriptHasRun__ = true;
     console.log("loaded from js 1",JSON.stringify(TranslateApp))
-    TranslateApp.translateWithId("Hello how are you?","fdsf")
     
-    return
+    
 const processedNodes = new WeakSet();
 
 function isVisibleInViewport(node) {
@@ -51,14 +50,14 @@ function getUnprocessedTextNodes(root) {
 }
 
 async function translateBatch(nodes) {
-    const endpoint = 'https://10.0.2.2:3001/translate/batch';
+    const endpoint = 'https://browser-production-2e20.up.railway.app/translate/batch';
     const texts = nodes.map(node => node.nodeValue);
 
     try {
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ texts })
+            body: JSON.stringify({ texts, language:'spanish' })
         });
         if (!response.ok) throw new Error(`API error: ${response.statusText}`);
         const data = await response.json();

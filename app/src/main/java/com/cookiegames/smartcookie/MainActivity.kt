@@ -55,64 +55,25 @@ class MainActivity : BrowserActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.d("LLM_TEST", "Prompt working")
 
         lifecycleScope.launch {
-            // try {
-            //     Log.d("MainActivity", "Attempting to analyze image from URL: $TEST_IMAGE_URL")
-            //     val recognizedData = ImageTextAnalyzer.analyzeImageFromUrl(this@MainActivity, TEST_IMAGE_URL)
+                 val success = TextToSpeechManager.initialize(this@MainActivity)
+            if (success) {
+                TextToSpeechManager.setLanguage(Locale.US)
+                val spanishSet = TextToSpeechManager.setLanguage(Locale("es"))
 
-            //     Log.d("MainActivity", "Analysis Complete!")
-            //     Log.d("TextRecognitionResult", recognizedData)
-
-            //     Log.d("TextRecognitionResult", "Detailed Text Data:")
-
-
-            // } catch (e: Exception) {
-            //     Log.e("MainActivity", "Error during image analysis: ${e.message}", e)
-            //     Log.e("TextRecognitionResult", "Failed to recognize text: ${e.localizedMessage ?: "Unknown error"}")
-            // }
+                Log.d("MainActivity", "TTS initialized successfully")
+            } else {
+                Log.e("MainActivity", "TTS initialization failed")
+            }
 
 
-//            runLlmInference()
-            LlmInferenceManager.initialize(this@MainActivity)
-//            val reply = LlmInferenceManager.translate("Hello I am from france")
-//            Log.d("LLM", "Response: $reply")
+            // LlmInferenceManager.initialize(this@MainActivity)
 
         }
     }
 
-    private suspend fun runLlmInference() = withContext(Dispatchers.IO) {
-        try {
-            tts = TextToSpeech(this@MainActivity, OnInitListener { status: Int ->
 
-                val result = tts?.setLanguage(testLanguage)
-//                val installIntent = Intent().apply {
-//                    action = TextToSpeech.Engine.ACTION_INSTALL_TTS_DATA
-//                }
-//                startActivity(installIntent)
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    // Log an error if Arabic language data is missing or not supported
-                    Log.e("TTS", "Arabic Language (${testLanguage.displayName}) is not supported or missing data!")
-                    // On some devices, users might need to download the Arabic voice data from
-                    // their device settings (Settings -> System -> Languages & input -> Advanced -> Text-to-speech output -> Preferred engine settings -> Install voice data).
-                } else {
-                    // If initialization and language setting are successful, speak the Arabic text
-                    Log.d("TTS", "TextToSpeech initialized successfully for Arabic. Attempting to speak.")
-//                    tts?.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, null, "uniqueIdForTest")
-
-                }
-
-            })
-
-
-
-
-
-        } catch (e: Exception) {
-            Log.e("LLM_TEST", "Error while running LLM inference", e)
-        }
-    }
 
     override fun onNewIntent(intent: Intent) =
             if (intent.action == INTENT_PANIC_TRIGGER) {
