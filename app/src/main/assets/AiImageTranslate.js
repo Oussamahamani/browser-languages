@@ -1,36 +1,232 @@
 const resolvers = new Map();
+const processedImages = new WeakSet(); // Track images we've already processed
+let imageObserver = null; // Global reference for cleanup
+let mutationObserver = null; // Global reference for cleanup
+let processingQueue = []; // Priority queue for image processing
+let isProcessing = false; // Prevent concurrent processing
 
-(async function () {
-  "use strict";
-  if (window.image__myInjectedScriptHasRun__) return;
-  window.image__myInjectedScriptHasRun__ = true;
+/**
+ * Check if tab is currently visible to avoid wasting resources
+ * @returns {boolean} - True if tab is visible
+ */
+function isTabVisible() {
+  return !document.hidden;
+}
 
-
-
-  let images = document.querySelectorAll("img");
-console.log("images here", JSON.stringify(images))
-  for (let image of images) {
-    let imageSrc = image.src;
-    const skipKeywords = [
-      "logo",
-      "favicon",
-      "icon",
-      "brand",
-      "sprite",
-      "avatar",
-    ];
-    const lowercasedSrc = imageSrc.toLowerCase();
-
-    if (skipKeywords.some((keyword) => lowercasedSrc.includes(keyword))) {
-      continue; // Skip this image
+/**
+ * Get image source, handling lazy-loaded images
+ * @param {HTMLImageElement} img - The image element
+ * @returns {string|null} - Image source or null
+ */
+function getImageSrc(img) {
+  // Check standard src
+  if (img.src && img.src !== window.location.href) {
+    return img.src;
+  }
+  
+  // Check common lazy loading attributes
+  const lazySrcAttrs = ['data-src', 'data-lazy-src', 'data-original', 'data-srcset'];
+  for (const attr of lazySrcAttrs) {
+    const lazySrc = img.getAttribute(attr);
+    if (lazySrc) {
+      console.log("🔍 Found lazy-loaded image:", lazySrc);
+      return lazySrc;
     }
-    if (lowercasedSrc.endsWith(".svg") || lowercasedSrc.endsWith(".ico")) {
-      continue;
-    }
-    console.log("images image1:", imageSrc);
+  }
+  
+  return null;
+}
 
+/**
+ * Check if an image element is visible to the user
+ * @param {HTMLImageElement} img - The image element to check
+ * @returns {boolean} - True if the image is visible, false otherwise
+ */
+function isImageVisible(img) {
+  // Don't process if tab is not visible
+  if (!isTabVisible()) {
+    return false;
+  }
+
+  // Check if image has no source (including lazy-loaded)
+  const imgSrc = getImageSrc(img);
+  if (!imgSrc) {
+    console.log("🔍 Image has no src:", img);
+    return false;
+  }
+
+  // Check if image is hidden by CSS
+  const computedStyle = window.getComputedStyle(img);
+  if (computedStyle.display === 'none' || 
+      computedStyle.visibility === 'hidden' || 
+      computedStyle.opacity === '0') {
+    console.log("🔍 Image hidden by CSS:", img.src, {
+      display: computedStyle.display,
+      visibility: computedStyle.visibility,
+      opacity: computedStyle.opacity
+    });
+    return false;
+  }
+
+  // Check if image has zero dimensions
+  const rect = img.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) {
+    console.log("🔍 Image has zero dimensions:", img.src, rect);
+    return false;
+  }
+
+  // Check if image is within the viewport (visible on screen)
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+  
+  // Add some buffer to consider images that are just slightly outside viewport
+  const buffer = 100; // Increased buffer for better UX
+  
+  const isInViewport = (
+    rect.top >= -buffer &&
+    rect.left >= -buffer &&
+    rect.bottom <= viewportHeight + buffer &&
+    rect.right <= viewportWidth + buffer
+  );
+
+  // Check if image is loaded
+  const isLoaded = img.complete && img.naturalHeight !== 0;
+
+  console.log("🔍 Visibility check for:", img.src, {
+    viewport: { width: viewportWidth, height: viewportHeight },
+    rect: rect,
+    isInViewport: isInViewport,
+    isLoaded: isLoaded,
+    complete: img.complete,
+    naturalHeight: img.naturalHeight
+  });
+
+  return isInViewport && isLoaded;
+}
+
+/**
+ * Check if an image should be skipped based on keywords and file types
+ * @param {string} imageSrc - The image source URL
+ * @returns {boolean} - True if image should be skipped
+ */
+function shouldSkipImage(imageSrc) {
+  const skipKeywords = [
+    "logo",
+    "favicon",
+    "icon",
+    "brand",
+    "sprite",
+    "avatar",
+  ];
+  const lowercasedSrc = imageSrc.toLowerCase();
+
+  if (skipKeywords.some((keyword) => lowercasedSrc.includes(keyword))) {
+    return true;
+  }
+  if (lowercasedSrc.endsWith(".svg") || lowercasedSrc.endsWith(".ico")) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Calculate priority for image processing (closer to viewport center = higher priority)
+ * @param {HTMLImageElement} img - The image element
+ * @returns {number} - Priority score (lower = higher priority)
+ */
+function calculateImagePriority(img) {
+  const rect = img.getBoundingClientRect();
+  const viewportCenterX = window.innerWidth / 2;
+  const viewportCenterY = window.innerHeight / 2;
+  const imgCenterX = rect.left + rect.width / 2;
+  const imgCenterY = rect.top + rect.height / 2;
+  
+  // Distance from viewport center
+  const distance = Math.sqrt(
+    Math.pow(imgCenterX - viewportCenterX, 2) + 
+    Math.pow(imgCenterY - viewportCenterY, 2)
+  );
+  
+  return distance;
+}
+
+/**
+ * Process images in priority order (closest to viewport center first)
+ */
+async function processImageQueue() {
+  if (isProcessing || processingQueue.length === 0) {
+    return;
+  }
+  
+  isProcessing = true;
+  
+  // Sort by priority (lower distance = higher priority)
+  processingQueue.sort((a, b) => a.priority - b.priority);
+  
+  while (processingQueue.length > 0 && isTabVisible()) {
+    const { image } = processingQueue.shift();
+    await processSingleImage(image);
+    
+    // Add small delay to prevent blocking UI
+    await new Promise(resolve => setTimeout(resolve, 50));
+  }
+  
+  isProcessing = false;
+}
+
+/**
+ * Add image to processing queue with priority
+ * @param {HTMLImageElement} image - The image element to process
+ */
+function queueImageForProcessing(image) {
+  // Check if already queued
+  if (processingQueue.some(item => item.image === image)) {
+    return;
+  }
+  
+  const priority = calculateImagePriority(image);
+  processingQueue.push({ image, priority });
+  
+  // Start processing queue
+  processImageQueue();
+}
+
+/**
+ * Process a single image for translation
+ * @param {HTMLImageElement} image - The image element to process
+ */
+async function processSingleImage(image) {
+  const imageSrc = getImageSrc(image);
+  console.log("🔍 Processing image:", imageSrc);
+  
+  // Skip if already processed
+  if (processedImages.has(image)) {
+    console.log("⏭️ Skipping already processed image:", imageSrc);
+    return;
+  }
+
+  // Check visibility
+  if (!isImageVisible(image)) {
+    console.log("👁️ Image not visible:", imageSrc);
+    return;
+  }
+
+  // Skip based on keywords and file types
+  if (shouldSkipImage(imageSrc)) {
+    console.log("🚫 Skipping image based on keywords/filetype:", imageSrc);
+    processedImages.add(image); // Mark as processed to avoid checking again
+    return;
+  }
+
+  console.log("✅ Processing visible image:", imageSrc);
+  
+  // Mark as processed before starting translation
+  processedImages.add(image);
+
+  try {
     // Determine whether to use base64 based on image source
     const useBase64 = shouldUseBase64(imageSrc);
+    console.log("📤 Extracting text from image, useBase64:", useBase64);
     
     let [coordinatesData, translationsMap] = await extractImage(
       imageSrc,
@@ -38,9 +234,192 @@ console.log("images here", JSON.stringify(images))
       useBase64
     );
     
-    if (!coordinatesData || coordinatesData.fullText.length < 3) continue;
-    translateImageText(image, coordinatesData, translationsMap);
+    if (!coordinatesData || coordinatesData.fullText.length < 3) {
+      console.log("❌ No sufficient text found in image:", imageSrc);
+      return;
+    }
+    
+    console.log("🔤 Found text, starting translation for:", imageSrc);
+    await translateImageText(image, coordinatesData, translationsMap);
+    console.log("✨ Translation completed for:", imageSrc);
+  } catch (error) {
+    console.error("💥 Error processing image:", imageSrc, error);
+    // Remove from processed set if there was an error, so we can retry later
+    processedImages.delete(image);
   }
+}
+
+/**
+ * Wrapper function for backwards compatibility
+ * @param {HTMLImageElement} image - The image element to process
+ */
+async function processImage(image) {
+  queueImageForProcessing(image);
+}
+
+/**
+ * Process all visible images on the page
+ */
+async function processVisibleImages() {
+  const images = document.querySelectorAll("img");
+  console.log("Checking", images.length, "images for visibility");
+  
+  for (let image of images) {
+    await processImage(image);
+  }
+}
+
+(async function () {
+  "use strict";
+  if (window.image__myInjectedScriptHasRun__) return;
+  window.image__myInjectedScriptHasRun__ = true;
+
+  console.time("loaded from js");
+
+  // Process initially visible images
+  await processVisibleImages();
+
+  // Set up scroll event listener with throttling for performance
+  let scrollTimeout;
+  const handleScroll = () => {
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(async () => {
+      await processVisibleImages();
+    }, 250); // Throttle to run max once every 250ms
+  };
+
+  // Set up intersection observer for better performance (fallback to scroll if not supported)
+  if ('IntersectionObserver' in window) {
+    console.log("Setting up IntersectionObserver...");
+    
+    imageObserver = new IntersectionObserver(
+      (entries) => {
+        console.log("IntersectionObserver triggered with", entries.length, "entries");
+        entries.forEach(async (entry) => {
+          console.log("Image intersection:", entry.target.src, "isIntersecting:", entry.isIntersecting);
+          if (entry.isIntersecting) {
+            await processImage(entry.target);
+          }
+        });
+      },
+      {
+        rootMargin: '100px', // Start processing images 100px before they become visible
+        threshold: 0.1 // Trigger when at least 10% of the image is visible
+      }
+    );
+
+    // Observe all images on the page
+    const observeImages = () => {
+      const allImages = document.querySelectorAll('img');
+      console.log("Observing", allImages.length, "images");
+      
+      allImages.forEach(img => {
+        // Only observe images that haven't been processed yet
+        if (!processedImages.has(img)) {
+          console.log("Adding observer to image:", img.src);
+          imageObserver.observe(img);
+        }
+      });
+    };
+
+    // Initial observation
+    observeImages();
+
+    // Re-observe new images that might be added dynamically
+    mutationObserver = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        // Handle new DOM nodes
+        if (mutation.type === 'childList') {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === 1) { // Element node
+              if (node.tagName === 'IMG') {
+                console.log("New image detected:", getImageSrc(node));
+                if (!processedImages.has(node)) {
+                  imageObserver.observe(node);
+                }
+              } else if (node.querySelectorAll) {
+                // Check for img elements within added nodes
+                const newImages = node.querySelectorAll('img');
+                console.log("Found", newImages.length, "new images in added content");
+                newImages.forEach(img => {
+                  if (!processedImages.has(img)) {
+                    imageObserver.observe(img);
+                  }
+                });
+              }
+            }
+          });
+        }
+        
+        // Handle attribute changes (lazy loading)
+        if (mutation.type === 'attributes' && mutation.target.tagName === 'IMG') {
+          const img = mutation.target;
+          console.log("🔄 Image src changed:", getImageSrc(img));
+          
+          // Remove from processed set so it can be reprocessed with new src
+          if (processedImages.has(img)) {
+            processedImages.delete(img);
+          }
+          
+          // Re-observe the image with new src
+          if (imageObserver && getImageSrc(img)) {
+            imageObserver.observe(img);
+          }
+        }
+      });
+    });
+
+    mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['src', 'data-src', 'data-lazy-src', 'data-original'] // Watch for src changes
+    });
+
+    console.log("IntersectionObserver setup complete");
+  } else {
+    console.log("IntersectionObserver not supported, using scroll events");
+    // Fallback to scroll events for older browsers
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll, { passive: true });
+  }
+
+  // Also add scroll events even with IntersectionObserver as a backup
+  window.addEventListener('scroll', handleScroll, { passive: true });
+  console.log("Scroll event listeners added as backup");
+
+  // Add periodic check as additional fallback every 2 seconds
+  const periodicInterval = setInterval(async () => {
+    if (isTabVisible()) {
+      console.log("🔄 Periodic check for new visible images");
+      await processVisibleImages();
+    }
+  }, 2000);
+
+  // Listen for tab visibility changes
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      console.log("🔇 Tab hidden - pausing image processing");
+    } else {
+      console.log("🔊 Tab visible - resuming image processing");
+      // Resume processing queue when tab becomes visible
+      processImageQueue();
+    }
+  });
+
+  // Cleanup function for better memory management
+  window.addEventListener('beforeunload', () => {
+    console.log("🧹 Cleaning up image translation resources");
+    if (imageObserver) {
+      imageObserver.disconnect();
+    }
+    if (mutationObserver) {
+      mutationObserver.disconnect();
+    }
+    clearInterval(periodicInterval);
+    processingQueue.length = 0;
+  });
+
   console.timeEnd("loaded from js");
 })();
 
