@@ -275,7 +275,7 @@ async function processVisibleImages() {
   window.image__myInjectedScriptHasRun__ = true;
 
   console.time("loaded from js");
-
+return
   // Process initially visible images
   await processVisibleImages();
 
