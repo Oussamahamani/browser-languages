@@ -8,8 +8,10 @@ import android.speech.tts.TextToSpeech.OnInitListener
 import android.util.Log
 import android.view.KeyEvent
 import android.view.Menu
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.CookieSyncManager
+import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
 import com.cookiegames.smartcookie.browser.activity.BrowserActivity
@@ -31,6 +33,10 @@ class MainActivity : BrowserActivity() {
     private var tts: TextToSpeech? = null // Declare TextToSpeech instance
     // Define the language and Arabic text to test
     private val TEST_IMAGE_URL = "https://www.bls.gov/blog/2017/images/women-at-work.png"    // Another example: "https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png"
+    
+    // UI elements for loading overlay
+    private lateinit var loadingOverlay: FrameLayout
+    private lateinit var loadingText: TextView
 
 
 
@@ -49,9 +55,18 @@ class MainActivity : BrowserActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        lifecycleScope.launch {
+        // Initialize UI elements
+        initLoadingUI()
 
-               val isInitialized = withContext(Dispatchers.IO) {
+        // Set up LLM loading callback
+        LlmInferenceManager.setLoadingCallback { isLoading, message ->
+            runOnUiThread {
+                updateLoadingState(isLoading, message)
+            }
+        }
+
+        lifecycleScope.launch {
+            val isInitialized = withContext(Dispatchers.IO) {
                 LlmInferenceManager.initialize(this@MainActivity)
             }
             if (isInitialized) {
@@ -81,6 +96,27 @@ class MainActivity : BrowserActivity() {
 //          var reply = LlmInferenceManager.translate("Hello I am from france")
 
 
+        }
+    }
+
+    private fun initLoadingUI() {
+        loadingOverlay = findViewById(R.id.llm_loading_overlay)
+        loadingText = findViewById(R.id.llm_loading_text)
+    }
+
+    private fun updateLoadingState(isLoading: Boolean, message: String?) {
+        if (isLoading) {
+            loadingText.text = message ?: "Loading..."
+            loadingOverlay.visibility = View.VISIBLE
+            // Disable user interactions
+            window.setFlags(
+                android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+            )
+        } else {
+            loadingOverlay.visibility = View.GONE
+            // Re-enable user interactions
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
         }
     }
 

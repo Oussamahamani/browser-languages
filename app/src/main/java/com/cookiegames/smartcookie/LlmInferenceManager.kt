@@ -17,6 +17,7 @@ object LlmInferenceManager {
     private var currentSession: LlmInferenceSession? = null
     private var isInitializing = false
     private var currentConfig: Config? = null
+    private var loadingCallback: ((Boolean, String?) -> Unit)? = null
 
     data class Config(
         val modelPath: String,
@@ -38,6 +39,7 @@ object LlmInferenceManager {
     suspend fun initialize(context: Context, config: Config): Boolean = withContext(Dispatchers.IO) {
         if (llmInference != null && !isInitializing) {
             Log.d(TAG, "LLM already initialized")
+            loadingCallback?.invoke(false, null)
             return@withContext true
         }
 
@@ -48,6 +50,7 @@ object LlmInferenceManager {
 
         try {
             isInitializing = true
+            loadingCallback?.invoke(true, "Initializing LLM...")
             Log.d(TAG, "Initializing LlmInference with model: ${config.modelPath}")
 
             val preferredBackend = if (config.preferGpu) {
@@ -62,17 +65,21 @@ object LlmInferenceManager {
                 .setPreferredBackend(preferredBackend)
                 .build()
 
+            loadingCallback?.invoke(true, "Loading model...")
             llmInference = LlmInference.createFromOptions(context, options)
             currentConfig = config
 
             // Create initial session
+            loadingCallback?.invoke(true, "Creating session...")
             createNewSession(config)
 
             Log.d(TAG, "LlmInference initialized successfully")
+            loadingCallback?.invoke(false, null)
             true
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize LlmInference", e)
+            loadingCallback?.invoke(false, "Initialization failed: ${e.message}")
             cleanup()
             false
         } finally {
@@ -262,10 +269,24 @@ object LlmInferenceManager {
     }
 
     /**
+     * Set callback for loading status updates
+     */
+    fun setLoadingCallback(callback: ((Boolean, String?) -> Unit)?) {
+        loadingCallback = callback
+    }
+
+    /**
      * Check if the manager is initialized and ready to use
      */
     fun isInitialized(): Boolean {
         return llmInference != null && currentSession != null && !isInitializing
+    }
+
+    /**
+     * Check if the manager is currently initializing
+     */
+    fun isInitializing(): Boolean {
+        return isInitializing
     }
 
     /**

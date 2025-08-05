@@ -81,6 +81,7 @@
                     android:background="@color/primary_color"
                     android:clipChildren="true"/>
 
+
                 <RelativeLayout
                     android:id="@+id/search_bar"
                     android:layout_width="fill_parent"
@@ -200,5 +201,58 @@
             app:menu="@menu/bottom_menu"
             />
 
+    <!-- Full-screen LLM Loading Overlay -->
+    <FrameLayout
+        android:id="@+id/llm_loading_overlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#E6000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:elevation="100dp"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:orientation="vertical"
+            android:padding="32dp"
+            android:background="@android:color/white"
+            android:elevation="8dp"
+            android:layout_margin="24dp">
+
+            <ProgressBar
+                android:id="@+id/llm_progress_bar"
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginBottom="24dp"
+                android:indeterminateTint="?attr/colorPrimary" />
+
+            <TextView
+                android:id="@+id/llm_loading_text"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:text="Initializing AI..."
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/black"
+                android:gravity="center" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center_horizontal"
+                android:layout_marginTop="8dp"
+                android:text="Please wait while we prepare the AI translation service"
+                android:textSize="14sp"
+                android:textColor="@android:color/darker_gray"
+                android:gravity="center" />
+
+        </LinearLayout>
+
+    </FrameLayout>
 
 </RelativeLayout>

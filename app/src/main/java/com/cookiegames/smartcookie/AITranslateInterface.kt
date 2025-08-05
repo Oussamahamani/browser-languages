@@ -27,8 +27,13 @@ class AITranslateInterface(private val view: WebView) {
                     Log.i("LLM_PROMPT", "Starting translation for id: $id")
 
                     if (!LlmInferenceManager.isInitialized()) {
-                        Log.e("LLM_PROMPT", "LlmInferenceManager not initialized")
-                        sendErrorToJS(id, "LLM not initialized")
+                        if (LlmInferenceManager.isInitializing()) {
+                            Log.w("LLM_PROMPT", "LlmInferenceManager still initializing, waiting...")
+                            sendErrorToJS(id, "LLM is still loading, please wait...")
+                        } else {
+                            Log.e("LLM_PROMPT", "LlmInferenceManager not initialized")
+                            sendErrorToJS(id, "LLM not available")
+                        }
                         return@withTimeout
                     }
 
@@ -71,8 +76,13 @@ class AITranslateInterface(private val view: WebView) {
                 Log.i("LLM_PROMPT", "Checking LlmInferenceManager initialization...")
 
                 if (!LlmInferenceManager.isInitialized()) {
-                    Log.e("LLM_PROMPT", "LlmInferenceManager not initialized!")
-                    sendBatchErrorToJS("LLM not initialized")
+                    if (LlmInferenceManager.isInitializing()) {
+                        Log.w("LLM_PROMPT", "LlmInferenceManager still initializing for batch translation")
+                        sendBatchErrorToJS("LLM is still loading, please wait...")
+                    } else {
+                        Log.e("LLM_PROMPT", "LlmInferenceManager not initialized!")
+                        sendBatchErrorToJS("LLM not available")
+                    }
                     return@launch
                 }
 
