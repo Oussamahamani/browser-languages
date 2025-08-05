@@ -377,7 +377,7 @@ class UserPreferences @Inject constructor(
     var link4 by preferences.stringPreference(LINK4, "https://speedtest.cookiejarapps.com")
 
     // API endpoints
-    var translationEndpoint by preferences.stringPreference(TRANSLATION_ENDPOINT, "https://smartcookieweb.com/translate/")
+    var translationEndpoint by preferences.stringPreference(TRANSLATION_ENDPOINT, "https://www.google.com/?translate/")
     var newsEndpoint by preferences.stringPreference(NEWS_ENDPOINT, "https://news.smartcookieweb.com/api.php")
 
     var useThirdPartyDownloaderApps by preferences.booleanPreference(USE_THIRD_PARTY_DOWNLOADER_APPS, false)

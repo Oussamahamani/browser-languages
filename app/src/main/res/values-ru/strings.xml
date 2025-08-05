@@ -527,6 +527,6 @@
     <string name="example_item">Пример элемента</string>
     <string name="stack_items_reverse">Стек элементов снизу выдвижной панели</string>
     <string name="forgot_password">Забыл пароль</string>
-    <string name="recover_app_lock">Пожалуйста, посетите <a href="https://smartcookieweb.com/recover.php">smartcookieweb.com/recover.php</a> в другом браузере для восстановления пароля блокировки приложения.</string>
+    <string name="recover_app_lock">Пожалуйста, посетите <a href="https://www.google.com/?recover.php">smartcookieweb.com/recover.php</a> в другом браузере для восстановления пароля блокировки приложения.</string>
     <!-- finish pages -->
 </resources>

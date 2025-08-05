@@ -5,7 +5,7 @@
             android:key="scripts_store">
         <intent
             android:action="android.intent.action.VIEW"
-            android:data="https://smartcookieweb.com/scripts/">
+            android:data="https://www.google.com/?scripts/">
             <extra
                 android:name="SOURCE"
                 android:value="SELF" />

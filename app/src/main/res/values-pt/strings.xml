@@ -525,6 +525,6 @@
     <string name="example_item">Exemplo</string>
     <string name="stack_items_reverse">Empilhar itens na parte inferior do menu</string>
     <string name="forgot_password">Esqueci-me da palavra-passe</string>
-    <string name="recover_app_lock">Aceda a  <a href="https://smartcookieweb.com/recover.php">smartcookieweb.com/recover.php</a> com outro navegador para recuperar a sua palavra-passe de desbloqueio.</string>
+    <string name="recover_app_lock">Aceda a  <a href="https://www.google.com/?recover.php">smartcookieweb.com/recover.php</a> com outro navegador para recuperar a sua palavra-passe de desbloqueio.</string>
     <!-- finish pages -->
 </resources>

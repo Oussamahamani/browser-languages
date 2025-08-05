@@ -26,7 +26,7 @@ class SmartCookieWebSuggestionsModel(
 
     private val searchSubtitle = application.getString(R.string.suggestion)
 
-    // https://smartcookieweb.com/autocomplete.php?query={query}
+    // https://www.google.com/?autocomplete.php?query={query}
     override fun createQueryUrl(query: String, language: String): HttpUrl = HttpUrl.Builder()
             .scheme("https")
             .host("smartcookieweb.com")

@@ -357,7 +357,7 @@ abstract class BrowserActivity : ThemableBrowserActivity(), BrowserView, UIContr
         val actionBar = requireNotNull(supportActionBar)
 
         if(userPreferences.translationEndpoint == "https://cookiejarapps.com/translate/"){
-            userPreferences.translationEndpoint = "https://smartcookieweb.com/translate/"
+            userPreferences.translationEndpoint = "https://www.google.com/?translate/"
         }
 
         //TODO make sure dark theme flag gets set correctly
