@@ -18,13 +18,13 @@
       this.onEvent = options.onEvent || (() => {});
       this.debug = options.debug || false;
       this.targetLanguage = options.targetLanguage || null;
-      this.translationEndpoint = options.translationEndpoint || "https://browser-production-2e20.up.railway.app/translate/batch";
 
       this.video = null;
       this.events = [];
       this.currentEventIndex = 0;
       this.isActive = false;
       this.isBatchTranslating = false;
+      this.pendingTranslations = new Map();
 
       this.currentlySpeaking = false;
       this.speechQueue = [];
@@ -129,6 +129,7 @@
       this.stop();
       this.stopCurrentSpeech();
       this.unmuteVideo();
+      this.pendingTranslations.clear();
       if (this.controlButton?.parentNode) {
         this.controlButton.parentNode.removeChild(this.controlButton);
         this.controlButton = null;
@@ -246,28 +247,58 @@
     }
 
     async _translateBatch(eventsToTranslate) {
-      if (!eventsToTranslate.length) return;
+      if (!eventsToTranslate.length) {
+        console.log("🚫 No events to translate");
+        return;
+      }
+
+      if (typeof AndroidInterface === 'undefined' || !AndroidInterface.translateArray) {
+        console.error('❌ AndroidInterface not available for translation - exiting script');
+        this.cleanup();
+        return;
+      }
 
       const texts = eventsToTranslate.map(event => event.originalText);
-      try {
-        const response = await fetch(this.translationEndpoint, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ texts, language: 'arabic' }),
-        });
+      console.log(`📝 Preparing to translate ${texts.length} texts`);
+      
+      // Store events for callback processing
+      this.pendingTranslations = new Map();
+      eventsToTranslate.forEach((event, i) => {
+        this.pendingTranslations.set(event.originalText, event);
+      });
 
-        const data = await response.json();
-        if (data.success && data.results) {
-          data.results.forEach((result, i) => {
-            if (result.translated) {
-              eventsToTranslate[i].text = result.translated;
-              eventsToTranslate[i].isTranslated = true;
-            }
-          });
+      return new Promise((resolve, reject) => {
+        // Set up global callback functions
+        window.onBatchTranslationResult = (originalText, translation, index, total) => {
+          console.log(`✅ Translation result ${index}/${total}: ${translation ? 'SUCCESS' : 'FAILED'}`);
+          const event = this.pendingTranslations.get(originalText);
+          if (event && translation) {
+            event.text = translation;
+            event.isTranslated = true;
+          }
+        };
+
+        window.onBatchTranslationComplete = () => {
+          console.log("🎉 Batch translation completed");
+          this.pendingTranslations.clear();
+          resolve();
+        };
+
+        window.onBatchTranslationError = (error) => {
+          console.error("❌ Translation error:", error);
+          this.pendingTranslations.clear();
+          reject(new Error(error));
+        };
+
+        try {
+          console.log("🚀 Calling AndroidInterface.translateArray with texts:", texts.slice(0, 3).map(t => t.substring(0, 30) + "..."));
+          AndroidInterface.translateArray(JSON.stringify(texts));
+        } catch (err) {
+          console.error("💥 Translation failed:", err);
+          this.pendingTranslations.clear();
+          reject(err);
         }
-      } catch (err) {
-        console.error("Translation failed:", err);
-      }
+      });
     }
 
     loadTranscript(transcript) {
@@ -286,7 +317,11 @@
         .sort((a, b) => a.time - b.time);
 
       this.currentEventIndex = 0;
-      if (this.video) this.start();
+      if (this.video) {
+        this.start();
+        // Immediately translate the first batch of events
+        setTimeout(() => this.translateUpcomingEvents(), 100);
+      }
     }
 
     parseTimeToSeconds(timeString) {
@@ -322,14 +357,25 @@
     async translateUpcomingEvents() {
       if (!this.targetLanguage || this.isBatchTranslating) return;
 
+      // Translate from current position up to 20 events ahead to cover both current and upcoming
+      const startIndex = Math.max(0, this.currentEventIndex - 5); // Include some past events
+      const endIndex = this.currentEventIndex + 20; // Include more upcoming events
+      
       const eventsToTranslate = this.events
-        .slice(this.currentEventIndex, this.currentEventIndex + 10)
+        .slice(startIndex, endIndex)
         .filter(event => !event.isTranslated);
 
       if (eventsToTranslate.length > 0) {
+        console.log(`🔄 Starting batch translation for ${eventsToTranslate.length} events (index ${startIndex} to ${endIndex})`);
         this.isBatchTranslating = true;
-        await this._translateBatch(eventsToTranslate);
-        this.isBatchTranslating = false;
+        try {
+          await this._translateBatch(eventsToTranslate);
+        } catch (error) {
+          console.error("Translation batch error:", error);
+        } finally {
+          this.isBatchTranslating = false;
+          console.log("🔄 Batch translation completed");
+        }
       }
     }
 
@@ -384,7 +430,14 @@
       }
 
       if (window.location.hostname.includes("youtube.com") && 
-          window.location.pathname === "/watch" && AndroidInterface) {
+          window.location.pathname === "/watch") {
+        
+        // Check if AndroidInterface is available
+        if (!AndroidInterface) {
+          console.error('❌ AndroidInterface not available - exiting YouTube translate script');
+          return;
+        }
+
         currentEventSystem = new TimedEventSystem({
           debug: true,
           targetLanguage: "ar",
