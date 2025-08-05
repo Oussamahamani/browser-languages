@@ -78,4 +78,56 @@
         <item>@string/yellow_theme</item>
         <item>@string/green_theme</item>-->
     </string-array>
+
+    <string-array name="languages" translatable="false">
+        <item>English</item>
+        <item>العربية (Arabic)</item>
+        <item>Čeština (Czech)</item>
+        <item>Deutsch (German)</item>
+        <item>Ελληνικά (Greek)</item>
+        <item>Español (Spanish)</item>
+        <item>فارسی (Persian)</item>
+        <item>Français (French)</item>
+        <item>Magyar (Hungarian)</item>
+        <item>Italiano (Italian)</item>
+        <item>עברית (Hebrew)</item>
+        <item>日本語 (Japanese)</item>
+        <item>한국어 (Korean)</item>
+        <item>Lietuvių (Lithuanian)</item>
+        <item>Nederlands (Dutch)</item>
+        <item>Polski (Polish)</item>
+        <item>Português (Portuguese)</item>
+        <item>Português (Brasil)</item>
+        <item>Русский (Russian)</item>
+        <item>Српски (Serbian)</item>
+        <item>Türkçe (Turkish)</item>
+        <item>中文 (简体)</item>
+        <item>中文 (繁體)</item>
+    </string-array>
+
+    <string-array name="language_codes" translatable="false">
+        <item>en</item>
+        <item>ar</item>
+        <item>cs</item>
+        <item>de</item>
+        <item>el</item>
+        <item>es</item>
+        <item>fa</item>
+        <item>fr</item>
+        <item>hu</item>
+        <item>it</item>
+        <item>iw</item>
+        <item>ja</item>
+        <item>ko</item>
+        <item>lt</item>
+        <item>nl</item>
+        <item>pl</item>
+        <item>pt</item>
+        <item>pt-rBR</item>
+        <item>ru</item>
+        <item>sr</item>
+        <item>tr</item>
+        <item>zh-rCN</item>
+        <item>zh-rTW</item>
+    </string-array>
 </resources>

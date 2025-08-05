@@ -644,5 +644,11 @@
 
     <string name="no_installed_app">No installed app can open this file</string>
     <string name="data_scheme">Images stored as Base64 data cannot currently be downloaded</string>
+    
+    <!-- Language selection -->
+    <string name="select_language_title">Select Language</string>
+    <string name="select_language_subtitle">Choose your preferred language for translations</string>
+    <string name="first_run_language_setup">Language Setup</string>
+    
     <!-- finish pages -->
 </resources>

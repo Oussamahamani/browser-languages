@@ -15,6 +15,7 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
 import com.cookiegames.smartcookie.browser.activity.BrowserActivity
+import com.cookiegames.smartcookie.dialog.LanguageSelectionDialog
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import io.reactivex.Completable
 import kotlinx.coroutines.Dispatchers
@@ -65,60 +66,71 @@ class MainActivity : BrowserActivity() {
             }
         }
 
+        // Show language selection dialog if language is not set
+        if (userPreferences.selectedLanguage.isEmpty()) {
+            LanguageSelectionDialog.showFirstTimeSetup(
+                this,
+                userPreferences
+            ) { selectedLanguageCode ->
+                Log.d("MainActivity", "Language selected: $selectedLanguageCode")
+                // You can add additional logic here when language is selected
+            }
+        }
+
         lifecycleScope.launch {
             val isInitialized = withContext(Dispatchers.IO) {
-                LlmInferenceManager.initialize(this@MainActivity)
-            }
-            if (isInitialized) {
-                Log.d("MainActivitychromium", "LLM ready to use:")
-                
-                // Make calls sequentially, not simultaneously
+                //     LlmInferenceManager.initialize(this@MainActivity)
+                // }
+                // if (isInitialized) {
+                //     Log.d("MainActivitychromium", "LLM ready to use:")
 
-            } else {
-                Log.e("MainActivitychromium", "LLM initialization failed")
-            }
+                //     // Make calls sequentially, not simultaneously
 
-            
-            val success = TextToSpeechManager.initialize(this@MainActivity)
-            if (success) {
-                // Optionally set language (default is system language)
-                TextToSpeechManager.setLanguage(Locale.US)
-                val arabicSet = TextToSpeechManager.setLanguage(Locale("ar"))
-
-                Log.d("MainActivity", "TTS initialized successfully")
-            } else {
-                Log.e("MainActivity", "TTS initialization failed")
-            }
+                // } else {
+                //     Log.e("MainActivitychromium", "LLM initialization failed")
+                // }
 
 
+                val success = TextToSpeechManager.initialize(this@MainActivity)
+                if (success) {
+                    // Optionally set language (default is system language)
+                    TextToSpeechManager.setLanguage(Locale.US)
+                    val arabicSet = TextToSpeechManager.setLanguage(Locale("ar"))
 
-         
+                    Log.d("MainActivity", "TTS initialized successfully")
+                } else {
+                    Log.e("MainActivity", "TTS initialization failed")
+                }
+
+
 //          var reply = LlmInferenceManager.translate("Hello I am from france")
 
 
+            }
         }
     }
-
-    private fun initLoadingUI() {
-        loadingOverlay = findViewById(R.id.llm_loading_overlay)
-        loadingText = findViewById(R.id.llm_loading_text)
-    }
-
-    private fun updateLoadingState(isLoading: Boolean, message: String?) {
-        if (isLoading) {
-            loadingText.text = message ?: "Loading..."
-            loadingOverlay.visibility = View.VISIBLE
-            // Disable user interactions
-            window.setFlags(
-                android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-            )
-        } else {
-            loadingOverlay.visibility = View.GONE
-            // Re-enable user interactions
-            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+        private fun initLoadingUI() {
+            loadingOverlay = findViewById(R.id.llm_loading_overlay)
+            loadingText = findViewById(R.id.llm_loading_text)
         }
-    }
+
+        private fun updateLoadingState(isLoading: Boolean, message: String?) {
+            if (isLoading) {
+                loadingText.text = message ?: "Loading..."
+                loadingOverlay.visibility = View.VISIBLE
+                // Disable user interactions
+                window.setFlags(
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                )
+            } else {
+                loadingOverlay.visibility = View.GONE
+                // Re-enable user interactions
+                window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+            }
+        }
+
+
 
 
 

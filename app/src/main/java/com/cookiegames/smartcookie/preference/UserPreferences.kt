@@ -183,8 +183,17 @@ class UserPreferences @Inject constructor(
     var imageUrlString by preferences.stringPreference(IMAGE_URL, "")
 
     var whatsNewEnabled by preferences.booleanPreference(WHATS_NEW, true)
-
-
+    
+    /**
+     * The selected language code for translations (e.g., "en", "fr", "es").
+     * Defaults to empty string to indicate language not set.
+     */
+    var selectedLanguage by preferences.stringPreference(SELECTED_LANGUAGE, "")
+    
+    /**
+     * Whether the first-run language selection has been completed.
+     */
+    var firstRunLanguageSetup by preferences.booleanPreference(FIRST_RUN_LANGUAGE_SETUP, false)
 
     /**
      * True if the browser should clear the navigation history on app exit, false otherwise.
@@ -487,3 +496,5 @@ private const val NEWS_ENDPOINT = "newsEndpoint"
 private const val HOMEPAGE_TYPE = "homepageType"
 private const val STACK_FROM_BOTTOM = "stackFromBottom"
 private const val DRAWER_OFFSET = "drawerOffset"
+private const val SELECTED_LANGUAGE = "selectedLanguage"
+private const val FIRST_RUN_LANGUAGE_SETUP = "firstRunLanguageSetup"
