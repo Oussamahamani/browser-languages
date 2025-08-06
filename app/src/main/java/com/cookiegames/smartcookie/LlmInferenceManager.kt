@@ -56,6 +56,7 @@ object LlmInferenceManager {
     
     // Page generation tracking to handle page changes
     private var currentPageGeneration = 0L
+    private var activeTranslations = 0 // Track active translations to prevent unsafe resets
     
     // Translation count for periodic cleanup
     private var translationCount = 0
@@ -363,9 +364,33 @@ object LlmInferenceManager {
                 }
             }
             
+            // Validate session and attempt recovery if needed
+            if (currentSession == null || llmInference == null) {
+                Log.w(TAG, "[$source] Session or inference is null - attempting recovery")
+                
+                // Try to recover by creating a new session if inference is available
+                if (llmInference != null && currentConfig != null) {
+                    try {
+                        Log.d(TAG, "[$source] Attempting to recover session")
+                        if (resetSessionInternal()) {
+                            Log.d(TAG, "[$source] Session recovery successful")
+                        } else {
+                            Log.e(TAG, "[$source] Session recovery failed - LLM not initialized")
+                            return@withContext null
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "[$source] Exception during session recovery: ${e.message}")
+                        return@withContext null
+                    }
+                } else {
+                    Log.e(TAG, "[$source] LLM not initialized. Call initialize() first.")
+                    return@withContext null
+                }
+            }
+            
             val session = currentSession
-            if (session == null || llmInference == null) {
-                Log.e(TAG, "LLM not initialized. Call initialize() first.")
+            if (session == null) {
+                Log.e(TAG, "[$source] Session is still null after recovery attempt")
                 return@withContext null
             }
 
@@ -382,22 +407,31 @@ object LlmInferenceManager {
                 val reason = if (wouldExceedTokens) "token limit (would reach ${approximateTokenCount + totalEstimatedTokens})" else "count limit"
                 Log.d(TAG, "Performing session reset due to $reason (count: $translationCount, current tokens: ~$approximateTokenCount)")
                 
-                // Launch reset in separate coroutine to avoid blocking
-                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                    try {
-                        if (resetSessionInternal()) {
-                            Log.d(TAG, "Session reset successful - fresh session ready")
-                        } else {
-                            Log.e(TAG, "Session reset failed")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error during session reset", e)
-                    }
-                }
+                // Check if it's safe to reset (no active translations)
+                val safeToReset = synchronized(this@LlmInferenceManager) { activeTranslations == 0 }
                 
-                // Reset counters immediately to prevent multiple resets
-                translationCount = 0
-                approximateTokenCount = 0
+                if (safeToReset) {
+                    // Launch reset in separate coroutine to avoid blocking
+                    kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                        try {
+                            if (resetSessionInternal()) {
+                                Log.d(TAG, "Session reset successful - fresh session ready")
+                            } else {
+                                Log.e(TAG, "Session reset failed")
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error during session reset", e)
+                        }
+                    }
+                    
+                    // Reset counters immediately to prevent multiple resets
+                    translationCount = 0
+                    approximateTokenCount = 0
+                } else {
+                    Log.d(TAG, "Delaying session reset - active translations in progress ($activeTranslations active)")
+                    // Still update counters to prevent immediate retry
+                    translationCount = maxOf(0, translationCount - 5) // Reduce count to delay next reset
+                }
             }
             
             // Add estimated tokens after potential reset
@@ -419,10 +453,15 @@ object LlmInferenceManager {
             }
 
             try {
+                // Increment active translation counter
+                synchronized(this@LlmInferenceManager) {
+                    activeTranslations++
+                }
+                
                 val startTime = System.currentTimeMillis()
                 val prompt = "Translate this text to $targetLanguage. Return only the translation, no explanations: $text"
 
-                Log.d(TAG, "[$source] Translating to $targetLanguage: ${text.take(50)}... (count: $translationCount)")
+                Log.d(TAG, "[$source] Translating to $targetLanguage: ${text.take(50)}... (count: $translationCount, active: $activeTranslations)")
 
                 currentSessionToUse.addQueryChunk(prompt)
                 val response = currentSessionToUse.generateResponse()
@@ -458,6 +497,11 @@ object LlmInferenceManager {
                 translationCount = 0
                 approximateTokenCount = 0
                 null
+            } finally {
+                // Decrement active translation counter
+                synchronized(this@LlmInferenceManager) {
+                    activeTranslations = maxOf(0, activeTranslations - 1)
+                }
             }
         }
     }
@@ -602,8 +646,27 @@ object LlmInferenceManager {
 
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to reset session", e)
-                currentSession = null // Ensure we don't keep a broken reference
-                return@withContext false
+                
+                // Don't immediately set to null - try to recover first
+                try {
+                    // Attempt a simple recovery by creating a basic session
+                    Log.w(TAG, "Attempting emergency session recovery")
+                    val newSession = LlmInferenceSession.createFromOptions(
+                        inference,
+                        LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                            .setTopK(40)
+                            .setTopP(0.95f)
+                            .setTemperature(0.8f)
+                            .build()
+                    )
+                    currentSession = newSession
+                    Log.d(TAG, "Emergency session recovery successful")
+                    return@withContext true
+                } catch (recoveryError: Exception) {
+                    Log.e(TAG, "Emergency session recovery failed", recoveryError)
+                    currentSession = null // Only null out as last resort
+                    return@withContext false
+                }
             }
         }
     }
