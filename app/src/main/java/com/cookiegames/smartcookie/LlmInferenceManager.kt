@@ -13,6 +13,13 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okio.buffer
+import okio.sink
+import java.io.File
+import java.io.IOException
+import kotlin.math.roundToInt
 
 /**
  * LLM Inference Manager based on Google AI Edge Gallery patterns
@@ -29,6 +36,14 @@ object LlmInferenceManager {
     
     // UserPreferences instance to get selected language
     private var userPreferences: UserPreferences? = null
+    
+    // Model download URL and path configuration
+    private const val MODEL_DOWNLOAD_URL = "https://firebasestorage.googleapis.com/v0/b/jobready-fce4e.appspot.com/o/assets%2Fgemma-3n-E2B-it-int4.task?alt=media&token=c0ff5d25-188d-447e-a9b0-fd15eca67453"
+    private const val MODEL_FILENAME = "gemma-3n-E2B-it-int4.task"
+    
+    // Download progress callback  
+    private var downloadProgressCallback: ((Int, Long, Long, String?) -> Unit)? = null
+    private var isDownloading = false
     
     // Load balancing queue system
     private val requestQueue = mutableListOf<TranslationRequest>()
@@ -121,6 +136,23 @@ object LlmInferenceManager {
 
         try {
             isInitializing = true
+            loadingCallback?.invoke(true, "Checking model availability...")
+            Log.d(TAG, "Checking model file: ${config.modelPath}")
+            
+            // Check if model exists, download if not
+            val modelFile = File(config.modelPath)
+            if (!modelFile.exists()) {
+                Log.d(TAG, "Model file not found. Starting download...")
+                loadingCallback?.invoke(true, "Model not found. Starting download...")
+                
+                val downloaded = downloadModel(context, config.modelPath)
+                if (!downloaded) {
+                    Log.e(TAG, "Failed to download model")
+                    loadingCallback?.invoke(false, "Failed to download model")
+                    return@withContext false
+                }
+            }
+            
             loadingCallback?.invoke(true, "Initializing LLM...")
             Log.d(TAG, "Initializing LlmInference with model: ${config.modelPath}")
 
@@ -159,8 +191,11 @@ object LlmInferenceManager {
     }
 
     suspend fun initialize(context: Context): Boolean {
+        val modelDir = File(context.filesDir, "llm")
+        val modelFile = File(modelDir, MODEL_FILENAME)
+        
         val defaultConfig = Config(
-            modelPath = "/data/local/tmp/llm/gemma-3n-E2B-it-int4.task",
+            modelPath = modelFile.absolutePath,
             maxTokens = 512,
             preferGpu = true
         )
@@ -448,6 +483,14 @@ object LlmInferenceManager {
     }
 
     /**
+     * Set callback for download progress updates
+     * @param callback (progressPercent: Int, bytesDownloaded: Long, totalBytes: Long, timeRemaining: String?) -> Unit
+     */
+    fun setDownloadProgressCallback(callback: ((Int, Long, Long, String?) -> Unit)?) {
+        downloadProgressCallback = callback
+    }
+
+    /**
      * Check if the manager is initialized and ready to use
      */
     fun isInitialized(): Boolean {
@@ -513,5 +556,146 @@ object LlmInferenceManager {
         llmInference?.close()
         llmInference = null
         currentConfig = null
+    }
+    
+    /**
+     * Download the model file with progress tracking
+     */
+    private suspend fun downloadModel(context: Context, modelPath: String): Boolean = withContext(Dispatchers.IO) {
+        if (isDownloading) {
+            Log.w(TAG, "Download already in progress")
+            return@withContext false
+        }
+        
+        isDownloading = true
+        
+        try {
+            val modelFile = File(modelPath)
+            val modelDir = modelFile.parentFile
+            
+            // Create directory if it doesn't exist
+            if (!modelDir.exists()) {
+                modelDir.mkdirs()
+            }
+            
+            val client = OkHttpClient.Builder()
+                .build()
+            
+            val request = Request.Builder()
+                .url(MODEL_DOWNLOAD_URL)
+                .build()
+            
+            Log.d(TAG, "Starting model download from: $MODEL_DOWNLOAD_URL")
+            loadingCallback?.invoke(true, "Starting download...")
+            
+            val response = client.newCall(request).execute()
+            
+            if (!response.isSuccessful) {
+                Log.e(TAG, "Download failed with response code: ${response.code()}")
+                loadingCallback?.invoke(false, "Download failed: ${response.message()}")
+                return@withContext false
+            }
+            
+            val responseBody = response.body() ?: run {
+                Log.e(TAG, "Response body is null")
+                loadingCallback?.invoke(false, "Download failed: No response body")
+                return@withContext false
+            }
+            
+            val contentLength = responseBody.contentLength()
+            Log.d(TAG, "Download started. Content length: $contentLength bytes")
+            
+            val sink = modelFile.sink().buffer()
+            val source = responseBody.source()
+            
+            var bytesDownloaded = 0L
+            var lastProgressUpdate = System.currentTimeMillis()
+            val startTime = System.currentTimeMillis()
+            val buffer = ByteArray(8192)
+            
+            while (true) {
+                val bytesRead = source.read(buffer)
+                if (bytesRead.toLong() == -1L) break
+                
+                sink.write(buffer, 0, bytesRead.toInt())
+                bytesDownloaded += bytesRead
+                
+                // Update progress every 500ms
+                val currentTime = System.currentTimeMillis()
+                if (currentTime - lastProgressUpdate >= 500) {
+                    val progressPercent = if (contentLength > 0) {
+                        ((bytesDownloaded * 100) / contentLength).toInt()
+                    } else {
+                        0
+                    }
+                    
+                    // Calculate estimated time remaining
+                    val timeElapsed = currentTime - startTime
+                    val timeRemaining = if (progressPercent > 0 && timeElapsed > 1000) {
+                        val estimatedTotal = (timeElapsed * 100) / progressPercent
+                        val remaining = estimatedTotal - timeElapsed
+                        formatTimeRemaining(remaining)
+                    } else {
+                        "Calculating..."
+                    }
+                    
+                    Log.d(TAG, "Download progress: $progressPercent% ($bytesDownloaded/$contentLength bytes)")
+                    loadingCallback?.invoke(true, "Downloading model: $progressPercent%")
+                    downloadProgressCallback?.invoke(progressPercent, bytesDownloaded, contentLength, timeRemaining)
+                    
+                    lastProgressUpdate = currentTime
+                }
+            }
+            
+            sink.close()
+            response.close()
+            
+            val totalTime = System.currentTimeMillis() - startTime
+            Log.d(TAG, "Model downloaded successfully in ${totalTime}ms. Size: ${modelFile.length()} bytes")
+            loadingCallback?.invoke(true, "Download completed successfully")
+            downloadProgressCallback?.invoke(100, bytesDownloaded, contentLength, "Completed")
+            
+            true
+            
+        } catch (e: IOException) {
+            Log.e(TAG, "Failed to download model", e)
+            loadingCallback?.invoke(false, "Download failed: ${e.message}")
+            false
+        } finally {
+            isDownloading = false
+        }
+    }
+    
+    /**
+     * Format time remaining in a human-readable format
+     */
+    private fun formatTimeRemaining(milliseconds: Long): String {
+        val seconds = milliseconds / 1000
+        return when {
+            seconds < 60 -> "${seconds}s remaining"
+            seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s remaining"
+            else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m remaining"
+        }
+    }
+    
+    /**
+     * Check if model is currently downloading
+     */
+    fun isModelDownloading(): Boolean = isDownloading
+    
+    /**
+     * Get the model file path for the current context
+     */
+    fun getModelPath(context: Context): String {
+        val modelDir = File(context.filesDir, "llm")
+        return File(modelDir, MODEL_FILENAME).absolutePath
+    }
+    
+    /**
+     * Check if model file exists
+     */
+    fun isModelAvailable(context: Context): Boolean {
+        val modelFile = File(getModelPath(context))
+        return modelFile.exists() && modelFile.length() > 0
     }
 }

@@ -16,6 +16,7 @@ import android.widget.TextView
 import androidx.lifecycle.lifecycleScope
 import com.cookiegames.smartcookie.browser.activity.BrowserActivity
 import com.cookiegames.smartcookie.dialog.LanguageSelectionDialog
+import com.cookiegames.smartcookie.dialog.ModelDownloadDialog
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import io.reactivex.Completable
 import kotlinx.coroutines.Dispatchers
@@ -38,6 +39,9 @@ class MainActivity : BrowserActivity() {
     // UI elements for loading overlay
     private lateinit var loadingOverlay: FrameLayout
     private lateinit var loadingText: TextView
+    
+    // Model download dialog
+    private var downloadDialog: ModelDownloadDialog? = null
 
 
 
@@ -65,6 +69,13 @@ class MainActivity : BrowserActivity() {
                 updateLoadingState(isLoading, message)
             }
         }
+        
+        // Set up download progress callback
+        LlmInferenceManager.setDownloadProgressCallback { progressPercent, bytesDownloaded, totalBytes, timeRemaining ->
+            runOnUiThread {
+                updateDownloadProgress(progressPercent, bytesDownloaded, totalBytes, timeRemaining)
+            }
+        }
         LlmInferenceManager.setUserPreferences(userPreferences)
 
         // Show language selection dialog if language is not set
@@ -84,7 +95,7 @@ class MainActivity : BrowserActivity() {
                  }
                  if (isInitialized) {
                      Log.d("MainActivitychromium", "LLM ready to use:")
-
+ 
                      // Make calls sequentially, not simultaneously
 
                  } else {
@@ -117,17 +128,42 @@ class MainActivity : BrowserActivity() {
 
         private fun updateLoadingState(isLoading: Boolean, message: String?) {
             if (isLoading) {
-                loadingText.text = message ?: "Loading..."
-                loadingOverlay.visibility = View.VISIBLE
-                // Disable user interactions
-                window.setFlags(
-                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
-                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                )
+                // Check if this is a download-related message
+                if (message?.contains("download", ignoreCase = true) == true || 
+                    message?.contains("Downloading", ignoreCase = true) == true) {
+                    
+                    // Show download dialog for download-related operations
+                    if (downloadDialog == null) {
+                        downloadDialog = ModelDownloadDialog.create(this)
+                    }
+                    if (!downloadDialog!!.isShowing()) {
+                        downloadDialog!!.show()
+                    }
+                    downloadDialog!!.updateMessage(message)
+                } else {
+                    // Show regular loading overlay for other operations
+                    loadingText.text = message ?: "Loading..."
+                    loadingOverlay.visibility = View.VISIBLE
+                    // Disable user interactions
+                    window.setFlags(
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
+                    )
+                }
             } else {
+                // Hide both dialogs when loading is complete
+                downloadDialog?.dismiss()
+                downloadDialog = null
+                
                 loadingOverlay.visibility = View.GONE
                 // Re-enable user interactions
                 window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE)
+            }
+        }
+        
+        private fun updateDownloadProgress(progressPercent: Int, bytesDownloaded: Long, totalBytes: Long, timeRemaining: String?) {
+            downloadDialog?.let { dialog ->
+                dialog.updateProgress(progressPercent, bytesDownloaded, totalBytes, timeRemaining)
             }
         }
 
@@ -147,6 +183,12 @@ class MainActivity : BrowserActivity() {
     override fun onPause() {
         super.onPause()
         saveOpenTabs()
+    }
+    
+    override fun onDestroy() {
+        super.onDestroy()
+        downloadDialog?.dismiss()
+        downloadDialog = null
     }
 
     override fun onResume(){
