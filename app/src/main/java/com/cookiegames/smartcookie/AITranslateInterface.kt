@@ -20,7 +20,7 @@ class AITranslateInterface(private val view: WebView) {
 
         translationScope.launch {
             try {
-                withTimeout(60000) {
+                withTimeout(30000) { // Reduced from 60s to 30s
                     Log.i("LLM_PROMPT", "Starting translation for id: $id")
 
                     if (!LlmInferenceManager.isInitialized()) {
@@ -99,8 +99,8 @@ class AITranslateInterface(private val view: WebView) {
 
                         Log.i("LLM_PROMPT", "About to call LlmInferenceManager.translate()...")
 
-                        // Add timeout per translation with more logging
-                        val translated = withTimeout(30000) { // Increased to 30 seconds
+                        // Reduced timeout for faster failure detection
+                        val translated = withTimeout(15000) { // Reduced to 15 seconds
                             Log.i("LLM_PROMPT", "Inside timeout block, calling translate...")
                             val result = LlmInferenceManager.translateToLanguage(text, "page-translator")
                             Log.i("LLM_PROMPT", "LlmInferenceManager.translate() returned: ${if (result != null) "SUCCESS (${result.length} chars)" else "NULL"}")
@@ -118,8 +118,8 @@ class AITranslateInterface(private val view: WebView) {
                             sendBatchResultToJS(text, null, currentIndex, totalCount)
                         }
 
-                        Log.i("LLM_PROMPT", "Adding delay before next translation...")
-                        delay(200) // Increased delay
+                        Log.i("LLM_PROMPT", "Adding minimal delay before next translation...")
+                        delay(50) // Reduced delay for better performance
                         Log.i("LLM_PROMPT", "=== ITERATION $i COMPLETED ===")
 
                     } catch (e: TimeoutCancellationException) {
@@ -131,6 +131,7 @@ class AITranslateInterface(private val view: WebView) {
                         } catch (ex: Exception) {
                             Log.e("LLM_PROMPT", "Error sending timeout result", ex)
                         }
+                        // Continue processing remaining items instead of failing entire batch
                     } catch (e: Exception) {
                         Log.e("LLM_PROMPT", "=== ERROR in iteration $i ===", e)
                         Log.e("LLM_PROMPT", "Translation error for ${i + 1}/$totalCount: ${e.message}")
@@ -140,6 +141,7 @@ class AITranslateInterface(private val view: WebView) {
                         } catch (ex: Exception) {
                             Log.e("LLM_PROMPT", "Error sending error result", ex)
                         }
+                        // Continue processing remaining items
                     }
                 }
 

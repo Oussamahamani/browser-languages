@@ -278,7 +278,15 @@ object LlmInferenceManager {
         }
         
         kotlinx.coroutines.GlobalScope.launch(Dispatchers.IO) {
-            processQueue()
+            try {
+                processQueue()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in queue processing", e)
+            } finally {
+                synchronized(this@LlmInferenceManager) {
+                    isProcessingQueue = false
+                }
+            }
         }
     }
     
@@ -345,16 +353,9 @@ object LlmInferenceManager {
 
                 Log.d(TAG, "[$source] Translating to $targetLanguage: ${text.take(50)}...")
 
-                // Reset session before each translation to ensure clean state
-                if (!resetSessionInternal()) {
-                    Log.e(TAG, "Failed to reset session before translation")
-                    return@withContext null
-                }
-
-                // Use the fresh session
-                val freshSession = currentSession!!
-                freshSession.addQueryChunk(prompt)
-                val response = freshSession.generateResponse()
+                // Use existing session without reset for better performance
+                session.addQueryChunk(prompt)
+                val response = session.generateResponse()
 
                 val endTime = System.currentTimeMillis()
                 Log.d(TAG, "[$source] Translation completed in ${endTime - startTime}ms")
@@ -364,6 +365,13 @@ object LlmInferenceManager {
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error generating translation for $source", e)
+                // Only reset session on error to recover
+                try {
+                    resetSessionInternal()
+                    Log.d(TAG, "Session reset after error for recovery")
+                } catch (resetError: Exception) {
+                    Log.e(TAG, "Failed to reset session after error", resetError)
+                }
                 null
             }
         }
