@@ -20,7 +20,16 @@ class AITranslateInterface(private val view: WebView) {
 
         translationScope.launch {
             try {
-                withTimeout(30000) { // Reduced from 60s to 30s
+                // Dynamic timeout for single translations too
+                val timeoutMs = when {
+                    text.length > 200 -> 30000L // 30 seconds for long texts
+                    text.length > 50 -> 25000L  // 25 seconds for medium texts  
+                    else -> 20000L // 20 seconds for short texts
+                }
+                
+                Log.i("LLM_PROMPT", "Using timeout: ${timeoutMs}ms for single translation (length: ${text.length})")
+                
+                withTimeout(timeoutMs) {
                     Log.i("LLM_PROMPT", "Starting translation for id: $id")
 
                     if (!LlmInferenceManager.isInitialized()) {
@@ -101,9 +110,9 @@ class AITranslateInterface(private val view: WebView) {
 
                         // Dynamic timeout based on text length
                         val timeoutMs = when {
-                            text.length > 300 -> 25000L // 25 seconds for long texts
-                            text.length > 100 -> 20000L // 20 seconds for medium texts
-                            else -> 15000L // 15 seconds for short texts
+                            text.length > 200 -> 30000L // 30 seconds for long texts (200+ chars)
+                            text.length > 50 -> 25000L  // 25 seconds for medium texts (50+ chars)
+                            else -> 20000L // 20 seconds for short texts
                         }
                         
                         Log.i("LLM_PROMPT", "Using timeout: ${timeoutMs}ms for text length: ${text.length}")
