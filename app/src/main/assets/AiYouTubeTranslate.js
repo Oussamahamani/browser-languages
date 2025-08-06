@@ -5,7 +5,6 @@
   // Prevent multiple instances
   if (window.__myInjectedYoutubeScriptHasRun__) return;
   window.__myInjectedYoutubeScriptHasRun__ = true;
-  // SVGs for the icons
 return
   let isRunning = false;
   let debounceTimer = null;
@@ -459,10 +458,20 @@ return
 
   await runMainScript();
 
+  function shouldReloadPage(newUrl, oldUrl) {
+    const newVideoId = new URL(newUrl).searchParams.get('v');
+    const oldVideoId = new URL(oldUrl).searchParams.get('v');
+    return newVideoId !== oldVideoId;
+  }
+
   const observer = new MutationObserver(() => {
     if (location.href !== lastUrl) {
-      lastUrl = location.href;
-      debouncedRunMainScript();
+      if (shouldReloadPage(location.href, lastUrl)) {
+        location.reload();
+      } else {
+        lastUrl = location.href;
+        debouncedRunMainScript();
+      }
     }
   });
 
@@ -472,10 +481,20 @@ return
     const original = history[method];
     history[method] = function () {
       const result = original.apply(this, arguments);
-      debouncedRunMainScript();
+      if (shouldReloadPage(location.href, lastUrl)) {
+        location.reload();
+      } else {
+        debouncedRunMainScript();
+      }
       return result;
     };
   });
 
-  window.addEventListener("popstate", debouncedRunMainScript);
+  window.addEventListener("popstate", () => {
+    if (shouldReloadPage(location.href, lastUrl)) {
+      location.reload();
+    } else {
+      debouncedRunMainScript();
+    }
+  });
 })();
