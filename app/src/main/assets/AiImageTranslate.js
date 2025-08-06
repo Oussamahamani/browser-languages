@@ -228,10 +228,11 @@ async function processSingleImage(image) {
     const useBase64 = shouldUseBase64(imageSrc);
     console.log("📤 Extracting text from image, useBase64:", useBase64);
     
-    let [coordinatesData, translationsMap] = await extractImage(
+    let [coordinatesData, translationsMap] = await extractImageWithImmediateTranslation(
       imageSrc,
       imageSrc,
-      useBase64
+      useBase64,
+      image
     );
     
     if (!coordinatesData || coordinatesData.fullText.length < 3) {
@@ -239,9 +240,7 @@ async function processSingleImage(image) {
       return;
     }
     
-    console.log("🔤 Found text, starting translation for:", imageSrc);
-    await translateImageText(image, coordinatesData, translationsMap);
-    console.log("✨ Translation completed for:", imageSrc);
+    console.log("✨ Immediate translation setup completed for:", imageSrc);
   } catch (error) {
     console.error("💥 Error processing image:", imageSrc, error);
     // Remove from processed set if there was an error, so we can retry later
@@ -275,7 +274,7 @@ async function processVisibleImages() {
   window.image__myInjectedScriptHasRun__ = true;
 
   console.time("loaded from js");
-return
+
   // Process initially visible images
   await processVisibleImages();
 
@@ -444,6 +443,158 @@ function imageToBase64(img) {
   });
 }
 
+// Helper function to create translation canvas
+async function createTranslationCanvas(imgElement, coordinatesData) {
+  return new Promise((resolve, reject) => {
+    // Use a new Image object to ensure it's fully loaded
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.src = imgElement.src;
+
+    img.onerror = (error) => {
+      console.error("Failed to load image for canvas creation.", error);
+      reject(error);
+    };
+
+    img.onload = () => {
+      try {
+        // Create a canvas to replace the image
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        // Set internal canvas dimensions to match the original image's natural size
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+
+        // Copy original image's styling to the canvas
+        canvas.id = imgElement.id;
+        canvas.className = imgElement.className;
+
+        // Get the displayed dimensions of the original image
+        const imgStyles = window.getComputedStyle(imgElement);
+        canvas.style.width = imgStyles.width;
+        canvas.style.height = imgStyles.height;
+        canvas.style.maxWidth = imgStyles.maxWidth;
+        canvas.style.maxHeight = imgStyles.maxHeight;
+
+        // Copy other important styling
+        canvas.style.objectFit = imgStyles.objectFit;
+        canvas.style.border = imgStyles.border;
+        canvas.style.margin = imgStyles.margin;
+        canvas.style.padding = imgStyles.padding;
+        canvas.style.display = imgStyles.display;
+
+        // Draw the original image onto the canvas
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        // Replace the original <img> element with the new <canvas>
+        if (imgElement.parentNode) {
+          imgElement.parentNode.replaceChild(canvas, imgElement);
+          resolve(canvas);
+        } else {
+          reject(new Error("Image element has no parent node"));
+        }
+      } catch (error) {
+        console.error("Error creating translation canvas:", error);
+        reject(error);
+      }
+    };
+  });
+}
+
+// New function for immediate translation processing
+async function extractImageWithImmediateTranslation(imageUrl, requestId, useBase64 = false, imgElement = null) {
+  console.log("🚀 Starting immediate translation for:", imageUrl, requestId, "useBase64:", useBase64);
+  
+  if (true) {
+    try {
+      // Create a new image element to load the image
+      const img = new Image();
+      img.crossOrigin = "anonymous"; // Handle CORS
+      
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+      
+      // Convert to base64
+      const base64String = await imageToBase64(img);
+      
+      // Call Android method with base64
+      AndroidApp.extractTextFromImageBase64(base64String, requestId);
+    } catch (error) {
+      console.error("Error processing image as base64:", error.message);
+    }
+  }
+
+  // Step 2: Wait for extraction result
+  let result = await waitForExtraction(requestId);
+  console.log("🔍 Extraction result:", JSON.stringify(result));
+  result = JSON.parse(result);
+
+  if (!result || !result.textBlocks || !Array.isArray(result.textBlocks)) {
+    console.error("Invalid result format:", result);
+    return [null, {}];
+  }
+
+  // Step 3: Get the original texts
+  const originalTexts = result.textBlocks.map((block) => block.text.trim());
+  console.log("📝 Found texts:", JSON.stringify(originalTexts));
+
+  if (!imgElement) {
+    console.error("No image element provided for immediate translation");
+    return [result, {}];
+  }
+
+  // Create canvas immediately for immediate updates
+  const canvas = await createTranslationCanvas(imgElement, result);
+  if (!canvas) {
+    console.error("Failed to create translation canvas");
+    return [result, {}];
+  }
+
+  // Set up immediate translation callback
+  const onImmediateTranslation = (originalText, translation, index) => {
+    console.log(`⚡ Immediate translation ${index}: "${originalText.substring(0, 30)}" -> "${translation.substring(0, 30)}"`);
+    
+    // Find the text block for this translation
+    const textBlock = result.textBlocks.find(block => block.text.trim() === originalText);
+    if (textBlock) {
+      // Apply this single translation immediately
+      const ctx = canvas.getContext('2d');
+      const tempTranslations = { [originalText]: translation };
+      
+      // Process only this specific text block
+      const tempData = { textBlocks: [textBlock] };
+      processTextBlocks(ctx, tempData, tempTranslations, {
+        clearPadding: 5,
+        maxFontSize: 60,
+        minFontSize: 8,
+        defaultTextColor: "#333333",
+        autoContrast: true,
+        contrastThreshold: 4.5,
+        addTextStroke: false,
+        defaultFontFamily: "Arial, sans-serif",
+        backgroundSampling: true,
+        textAlignment: "left",
+        preserveOriginalStyling: true
+      });
+    }
+  };
+
+  // Start translation with immediate callback
+  const translatedTexts = await translateTexts(originalTexts, onImmediateTranslation);
+  console.log("🎉 All immediate translations completed");
+
+  const translations = {};
+  originalTexts.forEach((text, index) => {
+    translations[text] = translatedTexts[index] || "";
+  });
+  
+  return [result, translations];
+}
+
 // Update the extractImage function to support base64
 async function extractImage(imageUrl, requestId, useBase64 = false) {
   console.log("loaded from js 5:", imageUrl, requestId, "useBase64:", useBase64);
@@ -517,7 +668,7 @@ function onExtractionResult(result, id) {
   }
 }
 
-async function translateTexts(texts) {
+async function translateTexts(texts, onTranslationCallback = null) {
   console.log("🌐 Starting batch translation using LlmInferenceManager for", texts.length, "texts");
   
   return new Promise((resolve) => {
@@ -542,6 +693,11 @@ async function translateTexts(texts) {
       }
       
       processedCount++;
+      
+      // Call the immediate callback if provided
+      if (onTranslationCallback && translation) {
+        onTranslationCallback(originalText, translation, index);
+      }
     };
 
     window.onImageBatchTranslationComplete = function() {
@@ -1025,4 +1181,373 @@ function shouldUseBase64(imageUrl) {
     // If URL parsing fails, default to URL method
     return false;
   }
+}
+
+// Global helper functions for text processing
+function processTextBlocks(ctx, data, translations, config) {
+  // Validate input parameters
+  if (!ctx) {
+    console.warn("Invalid canvas context for processing text blocks");
+    return;
+  }
+
+  if (!data || !data.textBlocks || !Array.isArray(data.textBlocks)) {
+    console.warn("Invalid data or textBlocks for processing:", data);
+    return;
+  }
+
+  if (!translations || typeof translations !== 'object') {
+    console.warn("Invalid translations object for processing:", translations);
+    return;
+  }
+
+  if (!config || typeof config !== 'object') {
+    console.warn("Invalid config object for processing:", config);
+    return;
+  }
+
+  data.textBlocks.forEach((block, index) => {
+    try {
+      // Validate block structure
+      if (!block || !block.text || !block.boundingBox) {
+        console.warn(`Invalid text block ${index}:`, block);
+        return;
+      }
+
+      const originalText = block.text.trim();
+      const translatedText = translations[originalText];
+      const box = parseBoundingBox(block.boundingBox);
+
+      // Validate parsed bounding box
+      if (!box || box.width <= 0 || box.height <= 0) {
+        console.warn(`Invalid bounding box for block ${index}:`, block.boundingBox, box);
+        return;
+      }
+
+      if (translatedText !== undefined && translatedText !== "") {
+        // Sample background color for better integration
+        const backgroundColor = config.backgroundSampling ? 
+          sampleBackgroundColor(ctx, box, config.clearPadding) : null;
+
+        // Clear the area of the original text with background color or transparency
+        clearTextArea(ctx, box, config.clearPadding, backgroundColor);
+
+        // Determine text style with automatic contrast adjustment
+        const textStyle = determineTextStyle(block, config, backgroundColor);
+
+        // Draw the translated text with enhanced styling
+        drawTextInBox(ctx, translatedText, box, textStyle, config);
+      } else {
+        console.warn(`No translation found for: "${originalText}" (block ${index})`);
+      }
+    } catch (error) {
+      console.error(`Error processing text block ${index}:`, error.message);
+    }
+  });
+}
+
+function sampleBackgroundColor(ctx, box, padding) {
+  try {
+    // Validate box parameters
+    if (!box || typeof box.x !== 'number' || typeof box.y !== 'number' || 
+        typeof box.width !== 'number' || typeof box.height !== 'number') {
+      console.warn("Invalid box parameters for background sampling:", box);
+      return null;
+    }
+
+    // Validate canvas context
+    if (!ctx || !ctx.canvas) {
+      console.warn("Invalid canvas context for background sampling");
+      return null;
+    }
+
+    // Sample from multiple points around the box edges for better color detection
+    const samplePoints = [
+      { x: Math.max(0, box.x - padding), y: Math.max(0, box.y - padding) },
+      { x: Math.min(ctx.canvas.width - 1, box.x + box.width + padding), y: Math.max(0, box.y - padding) },
+      { x: Math.max(0, box.x - padding), y: Math.min(ctx.canvas.height - 1, box.y + box.height + padding) },
+      { x: Math.min(ctx.canvas.width - 1, box.x + box.width + padding), y: Math.min(ctx.canvas.height - 1, box.y + box.height + padding) }
+    ];
+    
+    let totalR = 0, totalG = 0, totalB = 0, validSamples = 0;
+    
+    samplePoints.forEach(point => {
+      try {
+        // Ensure point coordinates are valid
+        if (point.x >= 0 && point.y >= 0 && 
+            point.x < ctx.canvas.width && point.y < ctx.canvas.height) {
+          const imageData = ctx.getImageData(point.x, point.y, 1, 1);
+          if (imageData && imageData.data && imageData.data.length >= 3) {
+            const [r, g, b] = imageData.data;
+            totalR += r;
+            totalG += g;
+            totalB += b;
+            validSamples++;
+          }
+        }
+      } catch (e) {
+        // Skip invalid sample points
+      }
+    });
+    
+    if (validSamples > 0) {
+      const avgR = Math.round(totalR / validSamples);
+      const avgG = Math.round(totalG / validSamples);
+      const avgB = Math.round(totalB / validSamples);
+      return `rgb(${avgR}, ${avgG}, ${avgB})`;
+    }
+  } catch (error) {
+    console.warn("Could not sample background color:", error);
+  }
+  
+  return null; // Fall back to transparent
+}
+
+function clearTextArea(ctx, box, padding, backgroundColor) {
+  // Validate box parameters
+  if (!box || typeof box.x !== 'number' || typeof box.y !== 'number' || 
+      typeof box.width !== 'number' || typeof box.height !== 'number') {
+    console.warn("Invalid box parameters for clearing text area:", box);
+    return;
+  }
+
+  // Validate canvas context
+  if (!ctx) {
+    console.warn("Invalid canvas context for clearing text area");
+    return;
+  }
+
+  if (backgroundColor) {
+    // Fill with sampled background color
+    ctx.fillStyle = backgroundColor;
+    ctx.fillRect(
+      box.x - padding,
+      box.y - padding,
+      box.width + 2 * padding,
+      box.height + 2 * padding
+    );
+  } else {
+    // Fall back to clearing (transparent)
+    ctx.clearRect(
+      box.x - padding,
+      box.y - padding,
+      box.width + 2 * padding,
+      box.height + 2 * padding
+    );
+  }
+}
+
+function getLuminance(r, g, b) {
+  // Convert RGB to relative luminance using WCAG formula
+  const rsRGB = r / 255;
+  const gsRGB = g / 255;
+  const bsRGB = b / 255;
+
+  const rLinear = rsRGB <= 0.03928 ? rsRGB / 12.92 : Math.pow((rsRGB + 0.055) / 1.055, 2.4);
+  const gLinear = gsRGB <= 0.03928 ? gsRGB / 12.92 : Math.pow((gsRGB + 0.055) / 1.055, 2.4);
+  const bLinear = bsRGB <= 0.03928 ? bsRGB / 12.92 : Math.pow((bsRGB + 0.055) / 1.055, 2.4);
+
+  return 0.2126 * rLinear + 0.7152 * gLinear + 0.0722 * bLinear;
+}
+
+function getContrastRatio(luminance1, luminance2) {
+  const lighter = Math.max(luminance1, luminance2);
+  const darker = Math.min(luminance1, luminance2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+function parseRGBColor(colorString) {
+  if (!colorString) return null;
+  
+  const rgbMatch = colorString.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+  if (rgbMatch) {
+    return {
+      r: parseInt(rgbMatch[1]),
+      g: parseInt(rgbMatch[2]),
+      b: parseInt(rgbMatch[3])
+    };
+  }
+  return null;
+}
+
+function getOptimalTextColor(backgroundColor) {
+  const bgColor = parseRGBColor(backgroundColor);
+  if (!bgColor) {
+    return "#333333"; // Default dark color if we can't parse background
+  }
+
+  const bgLuminance = getLuminance(bgColor.r, bgColor.g, bgColor.b);
+  
+  // Test contrast with white and black text
+  const whiteLuminance = 1; // White has luminance of 1
+  const blackLuminance = 0; // Black has luminance of 0
+  
+  const contrastWithWhite = getContrastRatio(bgLuminance, whiteLuminance);
+  const contrastWithBlack = getContrastRatio(bgLuminance, blackLuminance);
+  
+  // WCAG AA standard requires contrast ratio of at least 4.5:1 for normal text
+  const minContrast = 4.5;
+  
+  if (contrastWithWhite >= minContrast && contrastWithWhite > contrastWithBlack) {
+    return "#FFFFFF"; // Use white text
+  } else if (contrastWithBlack >= minContrast) {
+    return "#000000"; // Use black text
+  } else {
+    // If neither white nor black provides good contrast, choose the better one
+    return contrastWithWhite > contrastWithBlack ? "#FFFFFF" : "#000000";
+  }
+}
+
+function determineTextStyle(block, config, backgroundColor = null) {
+  let textColor = block.textColor || config.defaultTextColor;
+  
+  // If we have a background color, optimize text color for contrast
+  if (backgroundColor && !block.textColor) {
+    textColor = getOptimalTextColor(backgroundColor);
+  }
+  
+  return {
+    color: textColor,
+    fontFamily: block.fontFamily || config.defaultFontFamily,
+    fontWeight: block.fontWeight || "normal",
+    textAlign: block.textAlign || config.textAlignment,
+    maxFontSize: config.maxFontSize,
+    minFontSize: config.minFontSize
+  };
+}
+
+function parseBoundingBox(boxString) {
+  try {
+    const coords = boxString.split(",").map(Number);
+    if (coords.length !== 4 || coords.some(isNaN)) {
+      throw new Error("Invalid bounding box format");
+    }
+    const [x1, y1, x2, y2] = coords;
+    return { 
+      x: Math.min(x1, x2), 
+      y: Math.min(y1, y2), 
+      width: Math.abs(x2 - x1), 
+      height: Math.abs(y2 - y1) 
+    };
+  } catch (error) {
+    console.error("Error parsing bounding box:", boxString, error);
+    return { x: 0, y: 0, width: 0, height: 0 };
+  }
+}
+
+function drawTextInBox(ctx, text, box, style, config) {
+  // Validate parameters
+  if (!ctx) {
+    console.warn("Invalid canvas context for drawing text");
+    return;
+  }
+
+  if (!box || typeof box.x !== 'number' || typeof box.y !== 'number' || 
+      typeof box.width !== 'number' || typeof box.height !== 'number') {
+    console.warn("Invalid box parameters for drawing text:", box);
+    return;
+  }
+
+  if (!text || typeof text !== 'string') {
+    console.warn("Invalid text parameter for drawing:", text);
+    return;
+  }
+
+  if (!style || !config) {
+    console.warn("Invalid style or config parameters for drawing text");
+    return;
+  }
+
+  ctx.textBaseline = "top";
+
+  // Helper to get wrapped lines for a given font size
+  const getWrappedLines = (textToWrap, maxWidth, font) => {
+    ctx.font = font;
+    const words = textToWrap.split(" ");
+    let lines = [];
+    let currentLine = "";
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const metrics = ctx.measureText(testLine);
+      
+      if (metrics.width <= maxWidth && testLine.length < 100) { // Prevent extremely long lines
+        currentLine = testLine;
+      } else {
+        if (currentLine) {
+          lines.push(currentLine);
+        } else {
+          // Handle single word that's too long - force break
+          lines.push(word);
+        }
+        currentLine = currentLine ? "" : word;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+    return lines;
+  };
+
+  let currentFontSize = style.maxFontSize;
+
+  // Find the largest font size that fits both horizontally and vertically
+  while (currentFontSize >= style.minFontSize) {
+    const font = `${style.fontWeight} ${currentFontSize}px ${style.fontFamily}`;
+    const lines = text
+      .split("\n")
+      .flatMap((paragraph) => getWrappedLines(paragraph, box.width - 4, font)); // Leave small margin
+    
+    const lineHeight = currentFontSize * 1.2;
+    const totalHeight = lines.length * lineHeight;
+
+    // Check if all lines fit within the box width
+    ctx.font = font;
+    const allLinesFit = lines.every(line => ctx.measureText(line).width <= box.width - 4);
+
+    if (totalHeight <= box.height - 4 && allLinesFit) {
+      break; // This font size fits
+    }
+    currentFontSize -= 1;
+  }
+
+  // Ensure minimum font size
+  currentFontSize = Math.max(currentFontSize, style.minFontSize);
+
+  // Draw the final, fitted text
+  const finalFont = `${style.fontWeight} ${currentFontSize}px ${style.fontFamily}`;
+  ctx.font = finalFont;
+  const finalLineHeight = currentFontSize * 1.2;
+  const finalLines = text
+    .split("\n")
+    .flatMap((paragraph) => getWrappedLines(paragraph, box.width - 4, finalFont));
+
+  // Calculate vertical centering offset
+  const totalTextHeight = finalLines.length * finalLineHeight;
+  const verticalOffset = Math.max(0, (box.height - totalTextHeight) / 2);
+
+  // Draw each line with proper alignment and optional stroke for better visibility
+  finalLines.forEach((line, index) => {
+    let xPosition = box.x + 2; // Small left margin
+    
+    // Handle text alignment
+    if (style.textAlign === "center") {
+      const lineWidth = ctx.measureText(line).width;
+      xPosition = box.x + (box.width - lineWidth) / 2;
+    } else if (style.textAlign === "right") {
+      const lineWidth = ctx.measureText(line).width;
+      xPosition = box.x + box.width - lineWidth - 2; // Small right margin
+    }
+
+    const yPosition = box.y + verticalOffset + (index * finalLineHeight);
+    
+    // Add subtle stroke for better visibility on complex backgrounds
+    if (config.addTextStroke) {
+      ctx.strokeStyle = style.color === "#FFFFFF" ? "#000000" : "#FFFFFF";
+      ctx.lineWidth = Math.max(1, currentFontSize / 20); // Proportional stroke width
+      ctx.strokeText(line, xPosition, yPosition);
+    }
+    
+    // Draw the main text
+    ctx.fillStyle = style.color;
+    ctx.fillText(line, xPosition, yPosition);
+  });
 }
