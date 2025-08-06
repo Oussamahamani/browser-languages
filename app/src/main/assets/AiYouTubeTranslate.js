@@ -5,7 +5,7 @@
   // Prevent multiple instances
   if (window.__myInjectedYoutubeScriptHasRun__) return;
   window.__myInjectedYoutubeScriptHasRun__ = true;
-return
+  if (!window.location.hostname.includes("youtube.com") ) return;
   let isRunning = false;
   let debounceTimer = null;
   let lastUrl = location.href;

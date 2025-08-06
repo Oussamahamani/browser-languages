@@ -274,7 +274,13 @@ async function processVisibleImages() {
   window.image__myInjectedScriptHasRun__ = true;
 
   console.time("loaded from js");
-
+  // Exit early if the page is YouTube
+  if (window.location.hostname.trim().length <3) return
+  console.log(window.location.hostname,"***************")
+  if (window.location.hostname.includes("youtube.com")) {
+    console.log("YouTube detected, exiting image translation script.");
+    return;
+  }
   // Process initially visible images
   await processVisibleImages();
 

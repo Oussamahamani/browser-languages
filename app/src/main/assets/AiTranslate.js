@@ -1,5 +1,6 @@
-(function() {
+(async function() {
     'use strict';
+  if (window.location.hostname.trim().length <3) return
 
     // Configuration
     const CONFIG = {
@@ -34,6 +35,11 @@
 window.needReload = false
     console.log('🌐 Page Translator: Starting translation...');
 
+
+    // Add 10 seconds delay if the page is YouTube
+    if (location.hostname.includes('youtube.com')) {
+        await new Promise(resolve => setTimeout(resolve, 15000));
+    }
     /**
      * Check if text should be translated
      */
