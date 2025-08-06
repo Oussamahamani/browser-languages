@@ -51,6 +51,10 @@ object LlmInferenceManager {
     private val sourceQueues = mutableMapOf<String, MutableList<TranslationRequest>>()
     private var currentSourceIndex = 0
     private var activeSources = mutableListOf<String>()
+    
+    // Translation count for periodic cleanup
+    private var translationCount = 0
+    private val RESET_INTERVAL = 5 // Reset session every 5 translations to prevent corruption
 
     data class TranslationRequest(
         val text: String,
@@ -347,15 +351,32 @@ object LlmInferenceManager {
                 return@withContext null
             }
 
+            // Periodic session reset to prevent memory buildup
+            translationCount++
+            if (translationCount >= RESET_INTERVAL) {
+                Log.d(TAG, "Performing periodic session reset (count: $translationCount)")
+                if (resetSessionInternal()) {
+                    translationCount = 0
+                    Log.d(TAG, "Periodic session reset successful")
+                } else {
+                    Log.e(TAG, "Periodic session reset failed")
+                }
+            }
+
+            val currentSessionToUse = currentSession
+            if (currentSessionToUse == null) {
+                Log.e(TAG, "Session is null after reset attempt")
+                return@withContext null
+            }
+
             try {
                 val startTime = System.currentTimeMillis()
                 val prompt = "Translate this text to $targetLanguage. Return only the translation, no explanations: $text"
 
-                Log.d(TAG, "[$source] Translating to $targetLanguage: ${text.take(50)}...")
+                Log.d(TAG, "[$source] Translating to $targetLanguage: ${text.take(50)}... (count: $translationCount)")
 
-                // Use existing session without reset for better performance
-                session.addQueryChunk(prompt)
-                val response = session.generateResponse()
+                currentSessionToUse.addQueryChunk(prompt)
+                val response = currentSessionToUse.generateResponse()
 
                 val endTime = System.currentTimeMillis()
                 Log.d(TAG, "[$source] Translation completed in ${endTime - startTime}ms")
@@ -365,10 +386,13 @@ object LlmInferenceManager {
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error generating translation for $source", e)
-                // Only reset session on error to recover
+                // Reset session on error and reset counter
                 try {
-                    resetSessionInternal()
-                    Log.d(TAG, "Session reset after error for recovery")
+                    Log.d(TAG, "Resetting session after error")
+                    if (resetSessionInternal()) {
+                        translationCount = 0
+                        Log.d(TAG, "Session reset after error successful")
+                    }
                 } catch (resetError: Exception) {
                     Log.e(TAG, "Failed to reset session after error", resetError)
                 }

@@ -99,8 +99,16 @@ class AITranslateInterface(private val view: WebView) {
 
                         Log.i("LLM_PROMPT", "About to call LlmInferenceManager.translate()...")
 
-                        // Reduced timeout for faster failure detection
-                        val translated = withTimeout(15000) { // Reduced to 15 seconds
+                        // Dynamic timeout based on text length
+                        val timeoutMs = when {
+                            text.length > 300 -> 25000L // 25 seconds for long texts
+                            text.length > 100 -> 20000L // 20 seconds for medium texts
+                            else -> 15000L // 15 seconds for short texts
+                        }
+                        
+                        Log.i("LLM_PROMPT", "Using timeout: ${timeoutMs}ms for text length: ${text.length}")
+                        
+                        val translated = withTimeout(timeoutMs) {
                             Log.i("LLM_PROMPT", "Inside timeout block, calling translate...")
                             val result = LlmInferenceManager.translateToLanguage(text, "page-translator")
                             Log.i("LLM_PROMPT", "LlmInferenceManager.translate() returned: ${if (result != null) "SUCCESS (${result.length} chars)" else "NULL"}")
@@ -118,8 +126,15 @@ class AITranslateInterface(private val view: WebView) {
                             sendBatchResultToJS(text, null, currentIndex, totalCount)
                         }
 
-                        Log.i("LLM_PROMPT", "Adding minimal delay before next translation...")
+                        Log.i("LLM_PROMPT", "Adding minimal delay and cleanup before next translation...")
                         delay(50) // Reduced delay for better performance
+                        
+                        // Suggest garbage collection every few translations
+                        if ((i + 1) % 5 == 0) {
+                            System.gc()
+                            Log.d("LLM_PROMPT", "Suggested garbage collection after ${i + 1} translations")
+                        }
+                        
                         Log.i("LLM_PROMPT", "=== ITERATION $i COMPLETED ===")
 
                     } catch (e: TimeoutCancellationException) {
@@ -131,6 +146,19 @@ class AITranslateInterface(private val view: WebView) {
                         } catch (ex: Exception) {
                             Log.e("LLM_PROMPT", "Error sending timeout result", ex)
                         }
+                        
+                        // Force session reset after timeout to prevent corruption
+                        Log.w("LLM_PROMPT", "Forcing session reset after timeout...")
+                        try {
+                            LlmInferenceManager.resetSession()
+                            Log.d("LLM_PROMPT", "Session reset after timeout successful")
+                        } catch (resetEx: Exception) {
+                            Log.e("LLM_PROMPT", "Failed to reset session after timeout", resetEx)
+                        }
+                        
+                        // Add recovery delay
+                        delay(500)
+                        
                         // Continue processing remaining items instead of failing entire batch
                     } catch (e: Exception) {
                         Log.e("LLM_PROMPT", "=== ERROR in iteration $i ===", e)
@@ -148,6 +176,11 @@ class AITranslateInterface(private val view: WebView) {
                 Log.i("LLM_PROMPT", "=== LOOP COMPLETED ===")
                 Log.i("LLM_PROMPT", "Sending batch complete signal...")
                 sendBatchCompleteToJS()
+                
+                // Add cleanup delay to allow UI updates to complete
+                Log.i("LLM_PROMPT", "Adding cleanup delay...")
+                delay(100)
+                
                 Log.i("LLM_PROMPT", "=== BATCH TRANSLATION END ===")
 
             } catch (e: Exception) {
