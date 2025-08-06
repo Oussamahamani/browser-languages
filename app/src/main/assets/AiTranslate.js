@@ -314,7 +314,7 @@ window.needReload = false
     window.onBatchTranslationError = function(error) {
         console.error('❌ Translation error:', error);
         window.needReload = true
-        alert('An error occurred during translation. Please try again later.');
+        // alert('An error occurred during translation. Please try again later.');
         isProcessing = false; // Allow new processing
         
         // Process any queued updates that happened during translation

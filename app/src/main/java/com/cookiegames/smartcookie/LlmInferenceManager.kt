@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.coroutines.resume
 import okhttp3.OkHttpClient
@@ -33,6 +34,7 @@ object LlmInferenceManager {
     private var currentConfig: Config? = null
     private var loadingCallback: ((Boolean, String?) -> Unit)? = null
     private val translationMutex = Mutex()
+    private val sessionResetMutex = Mutex() // Prevents concurrent session operations
     
     // UserPreferences instance to get selected language
     private var userPreferences: UserPreferences? = null
@@ -52,19 +54,27 @@ object LlmInferenceManager {
     private var currentSourceIndex = 0
     private var activeSources = mutableListOf<String>()
     
+    // Page generation tracking to handle page changes
+    private var currentPageGeneration = 0L
+    
     // Translation count for periodic cleanup
     private var translationCount = 0
-    private val RESET_INTERVAL = 5 // Reset session every 5 translations to prevent corruption
+    private val RESET_INTERVAL = 20 // Reset session every 20 translations as backup measure
+    
+    // Token counting to prevent exceeding model limits
+    private var approximateTokenCount = 0
+    private val MAX_TOKEN_THRESHOLD = 1800 // Conservative but reasonable limit (90% of 2048)
 
     data class TranslationRequest(
         val text: String,
         val source: String, // identifier for the requesting script
-        val continuation: kotlin.coroutines.Continuation<String?>
+        val continuation: kotlin.coroutines.Continuation<String?>,
+        val pageGeneration: Long // to identify which page the request belongs to
     )
 
     data class Config(
         val modelPath: String,
-        val maxTokens: Int = 512,
+        val maxTokens: Int = 2048, // Increased for better performance
         val topK: Int = 40,
         val topP: Float = 0.95f,
         val temperature: Float = 0.8f,
@@ -222,7 +232,7 @@ object LlmInferenceManager {
         
         val defaultConfig = Config(
             modelPath = modelFile.absolutePath,
-            maxTokens = 512,
+            maxTokens = 2048,
             preferGpu = true
         )
         return initialize(context, defaultConfig)
@@ -240,7 +250,7 @@ object LlmInferenceManager {
      */
     suspend fun translateToLanguage(text: String, source: String = "default"): String? {
         return suspendCancellableCoroutine { continuation ->
-            val request = TranslationRequest(text, source, continuation)
+            val request = TranslationRequest(text, source, continuation, currentPageGeneration)
             
             synchronized(sourceQueues) {
                 // Add to source-specific queue
@@ -252,7 +262,7 @@ object LlmInferenceManager {
                 sourceQueues[source]!!.add(request)
                 
                 val totalRequests = sourceQueues.values.sumOf { it.size }
-                Log.d(TAG, "Queued translation request from $source (total requests: $totalRequests, sources: ${activeSources.size})")
+                Log.d(TAG, "Queued translation request from $source (total requests: $totalRequests, sources: ${activeSources.size}, page gen: $currentPageGeneration)")
             }
             
             processQueueIfNeeded()
@@ -345,28 +355,67 @@ object LlmInferenceManager {
     
     private suspend fun performTranslation(text: String, targetLanguage: String, source: String): String? = withContext(Dispatchers.IO) {
         translationMutex.withLock {
+            // Check if queue processing is still active
+            synchronized(this@LlmInferenceManager) {
+                if (!isProcessingQueue) {
+                    Log.d(TAG, "[$source] Translation cancelled - queue processing stopped")
+                    return@withContext null
+                }
+            }
+            
             val session = currentSession
             if (session == null || llmInference == null) {
                 Log.e(TAG, "LLM not initialized. Call initialize() first.")
                 return@withContext null
             }
 
-            // Periodic session reset to prevent memory buildup
-            translationCount++
-            if (translationCount >= RESET_INTERVAL) {
-                Log.d(TAG, "Performing periodic session reset (count: $translationCount)")
-                if (resetSessionInternal()) {
-                    translationCount = 0
-                    Log.d(TAG, "Periodic session reset successful")
-                } else {
-                    Log.e(TAG, "Periodic session reset failed")
+            // Estimate token count for input text (rough approximation: 4 chars per token)
+            val estimatedInputTokens = (text.length / 4) + 50 // +50 for prompt overhead
+            val estimatedOutputTokens = estimatedInputTokens // Assume similar output size
+            val totalEstimatedTokens = estimatedInputTokens + estimatedOutputTokens
+            
+            // Check if adding this translation would exceed token limit
+            val wouldExceedTokens = (approximateTokenCount + totalEstimatedTokens) >= MAX_TOKEN_THRESHOLD
+            val reachedCountLimit = translationCount >= RESET_INTERVAL
+            
+            if (wouldExceedTokens || reachedCountLimit) {
+                val reason = if (wouldExceedTokens) "token limit (would reach ${approximateTokenCount + totalEstimatedTokens})" else "count limit"
+                Log.d(TAG, "Performing session reset due to $reason (count: $translationCount, current tokens: ~$approximateTokenCount)")
+                
+                // Launch reset in separate coroutine to avoid blocking
+                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        if (resetSessionInternal()) {
+                            Log.d(TAG, "Session reset successful - fresh session ready")
+                        } else {
+                            Log.e(TAG, "Session reset failed")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error during session reset", e)
+                    }
                 }
+                
+                // Reset counters immediately to prevent multiple resets
+                translationCount = 0
+                approximateTokenCount = 0
             }
+            
+            // Add estimated tokens after potential reset
+            approximateTokenCount += totalEstimatedTokens
+            translationCount++
 
             val currentSessionToUse = currentSession
             if (currentSessionToUse == null) {
                 Log.e(TAG, "Session is null after reset attempt")
                 return@withContext null
+            }
+
+            // Double-check that queue processing is still active before proceeding
+            synchronized(this@LlmInferenceManager) {
+                if (!isProcessingQueue) {
+                    Log.d(TAG, "[$source] Translation cancelled during execution - queue processing stopped")
+                    return@withContext null
+                }
             }
 
             try {
@@ -386,16 +435,28 @@ object LlmInferenceManager {
 
             } catch (e: Exception) {
                 Log.e(TAG, "Error generating translation for $source", e)
-                // Reset session on error and reset counter
-                try {
-                    Log.d(TAG, "Resetting session after error")
-                    if (resetSessionInternal()) {
-                        translationCount = 0
-                        Log.d(TAG, "Session reset after error successful")
-                    }
-                } catch (resetError: Exception) {
-                    Log.e(TAG, "Failed to reset session after error", resetError)
+                
+                // Check if this is due to session being reset
+                if (e.message?.contains("session") == true || e.message?.contains("Session") == true) {
+                    Log.d(TAG, "[$source] Translation failed due to session reset - this is expected on page change")
+                    return@withContext null
                 }
+                
+                // Reset session on other errors and reset counter
+                Log.d(TAG, "Resetting session after error")
+                kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        if (resetSessionInternal()) {
+                            Log.d(TAG, "Session reset after error successful")
+                        } else {
+                            Log.e(TAG, "Failed to reset session after error")
+                        }
+                    } catch (resetError: Exception) {
+                        Log.e(TAG, "Exception during error recovery session reset", resetError)
+                    }
+                }
+                translationCount = 0
+                approximateTokenCount = 0
                 null
             }
         }
@@ -498,34 +559,52 @@ object LlmInferenceManager {
     }
 
     /**
-     * Internal session reset method
+     * Internal session reset method with forced cleanup and proper synchronization
      */
-    private fun resetSessionInternal(): Boolean {
-        val config = currentConfig ?: return false
-        val inference = llmInference ?: return false
+    private suspend fun resetSessionInternal(): Boolean = withContext(Dispatchers.IO) {
+        sessionResetMutex.withLock {
+            val config = currentConfig ?: return@withContext false
+            val inference = llmInference ?: return@withContext false
 
-        try {
-            Log.d(TAG, "Resetting LLM session")
+            try {
+                Log.d(TAG, "Resetting LLM session with forced cleanup")
 
-            // Close current session
-            currentSession?.close()
+                // Store reference to current session and clear it first
+                val sessionToClose = currentSession
+                currentSession = null
+                
+                // Close previous session safely
+                sessionToClose?.let { session ->
+                    try {
+                        session.close()
+                        Log.d(TAG, "Previous session closed safely")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Error closing previous session: ${e.message}")
+                    }
+                }
+                
+                // Allow time for native cleanup
+                delay(100)
 
-            // Create new session with same parameters
-            currentSession = LlmInferenceSession.createFromOptions(
-                inference,
-                LlmInferenceSession.LlmInferenceSessionOptions.builder()
-                    .setTopK(config.topK)
-                    .setTopP(config.topP)
-                    .setTemperature(config.temperature)
-                    .build()
-            )
+                // Create new session with same parameters
+                val newSession = LlmInferenceSession.createFromOptions(
+                    inference,
+                    LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                        .setTopK(config.topK)
+                        .setTopP(config.topP)
+                        .setTemperature(config.temperature)
+                        .build()
+                )
 
-            Log.d(TAG, "Session reset successfully")
-            return true
+                currentSession = newSession
+                Log.d(TAG, "Session reset successfully with new instance")
+                return@withContext true
 
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to reset session", e)
-            return false
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to reset session", e)
+                currentSession = null // Ensure we don't keep a broken reference
+                return@withContext false
+            }
         }
     }
 
@@ -556,6 +635,74 @@ object LlmInferenceManager {
      */
     fun isInitializing(): Boolean {
         return isInitializing
+    }
+
+    /**
+     * Reset queue and clear all current translations on page change
+     */
+    fun resetQueueAndClearTranslations() {
+        Log.d(TAG, "Resetting queue and clearing translations on page change")
+        
+        // Increment page generation to mark start of new page
+        val oldGeneration = currentPageGeneration
+        currentPageGeneration = System.currentTimeMillis()
+        Log.d(TAG, "Page generation changed from $oldGeneration to $currentPageGeneration")
+        
+        // Use translation mutex to prevent concurrent access during reset
+        kotlinx.coroutines.GlobalScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            translationMutex.withLock {
+                try {
+                    synchronized(sourceQueues) {
+                        // Cancel only translation requests from the old page generation
+                        sourceQueues.values.forEach { queue ->
+                            val iterator = queue.iterator()
+                            while (iterator.hasNext()) {
+                                val request = iterator.next()
+                                if (request.pageGeneration < currentPageGeneration) {
+                                    // This is from old page - cancel it
+                                    try {
+                                        request.continuation.resume(null)
+                                        iterator.remove()
+                                    } catch (e: Exception) {
+                                        Log.w(TAG, "Error canceling old page translation request: ${e.message}")
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Remove empty source queues
+                        val emptySourcesKeys = sourceQueues.keys.filter { sourceQueues[it]!!.isEmpty() }
+                        emptySourcesKeys.forEach { sourceKey ->
+                            sourceQueues.remove(sourceKey)
+                            activeSources.remove(sourceKey)
+                        }
+                        
+                        val remainingRequests = sourceQueues.values.sumOf { it.size }
+                        Log.d(TAG, "Cleared old page translation requests. Remaining new page requests: $remainingRequests")
+                    }
+                    
+                    // Reset session, translation count, and token count
+                    translationCount = 0
+                    approximateTokenCount = 0
+                    
+                    // Reset session to clear any ongoing translation context
+                    try {
+                        if (resetSessionInternal()) {
+                            Log.d(TAG, "Session reset successfully on page change")
+                        } else {
+                            Log.w(TAG, "Failed to reset session on page change")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error during page change session reset", e)
+                    }
+                    
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error resetting session on page change", e)
+                }
+                
+                Log.d(TAG, "Queue reset completed - new page requests preserved and ready for processing")
+            }
+        }
     }
 
     /**

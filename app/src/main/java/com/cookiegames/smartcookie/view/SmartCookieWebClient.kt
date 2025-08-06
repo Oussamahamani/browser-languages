@@ -661,6 +661,9 @@ class SmartCookieWebClient(
         errored = true
          Log.i(TAG, "page finished loading:started")
 
+        // Reset LLM queue and clear translations on page change
+        com.cookiegames.smartcookie.LlmInferenceManager.resetQueueAndClearTranslations()
+
         if(isPackageInstalled(activity.resources.getString(R.string.ytdl_package_name), activity.packageManager) && stringContainsItemFromList(url, knownUndetectedVideoUrls)){
             activity.findViewById<FrameLayout>(R.id.download_button).visibility = View.VISIBLE
         }
