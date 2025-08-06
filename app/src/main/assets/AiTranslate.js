@@ -31,7 +31,7 @@
     let scrollTimeout;
     let pendingUpdate = false; // Track if we need to process after current translation finishes
     let updateQueue = []; // Queue for pending updates
-
+window.needReload = false
     console.log('🌐 Page Translator: Starting translation...');
 
     /**
@@ -181,6 +181,9 @@
         translationProgress.completed++;
         processedTexts.add(originalText); // Mark as processed
 
+        if(window.needReload) {
+            window.location.reload();
+        }
         const percent = Math.round((translationProgress.completed / translationProgress.total) * 100);
         console.log(`📊 Progress: ${translationProgress.completed}/${translationProgress.total} (${percent}%)`);
     }
@@ -310,6 +313,8 @@
 
     window.onBatchTranslationError = function(error) {
         console.error('❌ Translation error:', error);
+        window.needReload = true
+        alert('An error occurred during translation. Please try again later.');
         isProcessing = false; // Allow new processing
         
         // Process any queued updates that happened during translation
