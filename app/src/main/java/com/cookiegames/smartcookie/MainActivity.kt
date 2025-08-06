@@ -90,6 +90,14 @@ class MainActivity : BrowserActivity() {
         }
 
         lifecycleScope.launch {
+            Log.d("MainActivity", "Starting LLM initialization...")
+            
+            // Check model status first
+            val modelPath = LlmInferenceManager.getModelPath(this@MainActivity)
+            val modelExists = LlmInferenceManager.isModelAvailable(this@MainActivity)
+            Log.d("MainActivity", "Model path: $modelPath")
+            Log.d("MainActivity", "Model exists: $modelExists")
+            
             val isInitialized = withContext(Dispatchers.IO) {
                      LlmInferenceManager.initialize(this@MainActivity)
                  }
@@ -97,6 +105,11 @@ class MainActivity : BrowserActivity() {
                      Log.d("MainActivitychromium", "LLM ready to use:")
  
                      // Make calls sequentially, not simultaneously
+                     
+                     // Reload current page/tab after model initialization
+                     runOnUiThread {
+                         reloadCurrentPage()
+                     }
 
                  } else {
                      Log.e("MainActivitychromium", "LLM initialization failed")
@@ -189,6 +202,11 @@ class MainActivity : BrowserActivity() {
         super.onDestroy()
         downloadDialog?.dismiss()
         downloadDialog = null
+    }
+    
+    private fun reloadCurrentPage() {
+        // Reload the current tab/page after model initialization
+        tabsManager.currentTab?.reload()
     }
 
     override fun onResume(){

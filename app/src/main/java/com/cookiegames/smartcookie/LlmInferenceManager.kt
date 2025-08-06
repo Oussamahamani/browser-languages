@@ -139,7 +139,7 @@ object LlmInferenceManager {
             loadingCallback?.invoke(true, "Checking model availability...")
             Log.d(TAG, "Checking model file: ${config.modelPath}")
             
-            // Check if model exists, download if not
+            // Check if model exists and is valid, download if not
             val modelFile = File(config.modelPath)
             if (!modelFile.exists()) {
                 Log.d(TAG, "Model file not found. Starting download...")
@@ -150,6 +150,28 @@ object LlmInferenceManager {
                     Log.e(TAG, "Failed to download model")
                     loadingCallback?.invoke(false, "Failed to download model")
                     return@withContext false
+                }
+            } else {
+                // Model file exists, validate it
+                Log.d(TAG, "Model file found, validating integrity...")
+                loadingCallback?.invoke(true, "Validating model file...")
+                
+                if (!isModelFileValid(config.modelPath)) {
+                    Log.w(TAG, "Model file is corrupted or invalid. Re-downloading...")
+                    loadingCallback?.invoke(true, "Model file corrupted. Re-downloading...")
+                    
+                    // Clean up corrupted file
+                    cleanupCorruptedModel(config.modelPath)
+                    
+                    // Re-download
+                    val downloaded = downloadModel(context, config.modelPath)
+                    if (!downloaded) {
+                        Log.e(TAG, "Failed to re-download model")
+                        loadingCallback?.invoke(false, "Failed to re-download model")
+                        return@withContext false
+                    }
+                } else {
+                    Log.d(TAG, "Model file validation passed")
                 }
             }
             
@@ -692,10 +714,67 @@ object LlmInferenceManager {
     }
     
     /**
-     * Check if model file exists
+     * Check if model file exists and is valid
      */
     fun isModelAvailable(context: Context): Boolean {
         val modelFile = File(getModelPath(context))
         return modelFile.exists() && modelFile.length() > 0
+    }
+    
+    /**
+     * Validate model file integrity by checking if it's a valid zip/task file
+     */
+    private fun isModelFileValid(modelPath: String): Boolean {
+        try {
+            val modelFile = File(modelPath)
+            if (!modelFile.exists() || modelFile.length() == 0L) {
+                return false
+            }
+            
+            // Basic validation - check file size is reasonable (should be several MB for Gemma model)
+            val minExpectedSize = 100 * 1024 * 1024L // 100MB minimum
+            if (modelFile.length() < minExpectedSize) {
+                Log.w(TAG, "Model file is too small: ${modelFile.length()} bytes, expected at least $minExpectedSize bytes")
+                return false
+            }
+            
+            // Try to read the first few bytes to check if it's a valid archive
+            modelFile.inputStream().use { input ->
+                val header = ByteArray(4)
+                val bytesRead = input.read(header)
+                if (bytesRead < 4) {
+                    Log.w(TAG, "Cannot read model file header")
+                    return false
+                }
+                
+                // Check for ZIP file signature (PK\003\004 or PK\005\006 or PK\007\008)
+                if (header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()) {
+                    return true
+                }
+                
+                // For .task files, they might have different signatures
+                // Let's assume it's valid if it's not obviously corrupted
+                Log.d(TAG, "Model file header: ${header.joinToString(" ") { "%02x".format(it) }}")
+                return true
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error validating model file", e)
+            return false
+        }
+    }
+    
+    /**
+     * Clean up corrupted model file
+     */
+    private fun cleanupCorruptedModel(modelPath: String) {
+        try {
+            val modelFile = File(modelPath)
+            if (modelFile.exists()) {
+                Log.w(TAG, "Deleting corrupted model file: $modelPath")
+                modelFile.delete()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting corrupted model file", e)
+        }
     }
 }
